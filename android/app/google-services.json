@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "954927948405",
+    "project_id": "vinayaga-plates-management",
+    "storage_bucket": "vinayaga-plates-management.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:954927948405:android:e9a52f905bfab442f94e3c",
+        "android_client_info": {
+          "package_name": "com.vinayagaplates.myapp"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDUldFsDsSDXgVbDCtckwWeE3U6GjbgUk0"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

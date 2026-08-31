@@ -1,0 +1,367 @@
+@import "tailwindcss";
+
+@theme {
+  --color-brand-sidebar: #0f172a;
+  /* Slate 900 */
+  --color-brand-sidebar-hover: #1e293b;
+  /* Slate 800 */
+  --color-brand-accent: #2563eb;
+  /* Blue 600 */
+  --color-brand-bg: #ffeef1;
+  /* Premium light rose blush pink background */
+  --color-brand-card: #ffffff;
+  /* White */
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "Playfair Display", serif;
+}
+
+:root {
+  font-family: var(--font-sans);
+  line-height: 1.5;
+  font-weight: 400;
+
+  color-scheme: light;
+  color: #334155;
+  background-color: var(--color-brand-bg);
+
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background-color: var(--color-brand-bg);
+  /* Clean light pink background */
+}
+
+#root {
+  width: 100%;
+}
+
+option {
+  background-color: #ffffff;
+  color: #334155;
+}
+
+/* Custom premium scrollbar style */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+@keyframes cardSlide {
+  0% {
+    transform: translateX(25px) scale(0.95);
+    filter: blur(2px);
+    opacity: 0.3;
+  }
+
+  100% {
+    transform: translateX(0) scale(1);
+    filter: blur(0);
+    opacity: 1;
+  }
+}
+
+.animate-card-slide {
+  animation: cardSlide 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* ===================================================
+   SMOOTH CENTERED POPUP MODAL ANIMATION
+   Used for Add / Edit / Adjust form modals
+=================================================== */
+@keyframes modalPop {
+  0% {
+    opacity: 0;
+    transform: scale(0.88) translateY(16px);
+    filter: blur(4px);
+  }
+
+  60% {
+    opacity: 1;
+    filter: blur(0);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+    filter: blur(0);
+  }
+}
+
+@keyframes backdropFadeIn {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+.animate-modal-pop {
+  animation: modalPop 0.35s cubic-bezier(0.34, 1.56, 0.64, 1) forwards;
+}
+
+.animate-backdrop-in {
+  animation: backdropFadeIn 0.25s ease forwards;
+}
+
+@keyframes expandCard {
+  0% {
+    opacity: 0;
+    transform: scaleY(0.6) translateY(-12px);
+    transform-origin: top;
+    filter: blur(4px);
+  }
+
+  100% {
+    opacity: 1;
+    transform: scaleY(1) translateY(0);
+    transform-origin: top;
+    filter: blur(0);
+  }
+}
+
+/* =========================================================
+   MOBILE NATIVE DATEPICKER VISIBILITY OVERRIDES
+========================================================= */
+input[type="date"] {
+  color: #334155 !important;
+  background-color: transparent !important;
+  font-family: inherit;
+  font-size: 11px !important;
+  font-weight: 600 !important;
+  padding: 0 !important;
+  margin: 0 !important;
+  height: 100% !important;
+  min-height: 0 !important;
+  box-sizing: border-box;
+  border: none !important;
+  outline: none !important;
+}
+
+input[type="date"]::-webkit-datetime-edit,
+input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+input[type="date"]::-webkit-datetime-edit-text,
+input[type="date"]::-webkit-datetime-edit-month-field,
+input[type="date"]::-webkit-datetime-edit-day-field,
+input[type="date"]::-webkit-datetime-edit-year-field {
+  color: #334155 !important;
+}
+
+/* =========================================================
+   BODY SCROLL LOCK WHEN MODALS ARE OPEN
+========================================================= */
+body:has(.animate-backdrop-in),
+body:has(.animate-fade-in),
+body:has(.fixed.z-50) {
+  overflow: hidden !important;
+}
+
+/* =========================================================
+   PROFESSIONAL PRINT STYLES
+========================================================= */
+@page {
+  margin-top: 8mm !important;
+  margin-bottom: 8mm !important;
+  margin-left: 10mm !important;
+  margin-right: 10mm !important;
+  size: auto;
+}
+
+@media print {
+  @page {
+    margin-top: 8mm !important;
+    margin-bottom: 8mm !important;
+    margin-left: 10mm !important;
+    margin-right: 10mm !important;
+    size: auto;
+  }
+
+  *,
+  *::before,
+  *::after {
+    -webkit-print-color-adjust: exact !important;
+    print-color-adjust: exact !important;
+    box-shadow: none !important;
+    text-shadow: none !important;
+  }
+
+  html,
+  body {
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 0 !important;
+    background: #ffffff !important;
+    color: #0f172a !important;
+    font-size: 9pt !important;
+    min-width: 100% !important;
+    overflow: visible !important;
+  }
+
+  #root,
+  .min-h-screen,
+  .bg-brand-bg,
+  div {
+    min-height: 0 !important;
+    height: auto !important;
+    background-color: transparent !important;
+  }
+
+  /* Hide app navigation, sidebar, mobile navigation, buttons, popups */
+  aside,
+  header,
+  nav,
+  .no-print,
+  button,
+  input,
+  select,
+  .fixed,
+  [role="dialog"] {
+    display: none !important;
+  }
+
+  /* Expand main container to 100% full width and eliminate padding overflow */
+  main {
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    width: 100% !important;
+    background: transparent !important;
+    overflow: visible !important;
+  }
+
+  /* Remove outer card borders, background colors, and excess margins in print */
+  section,
+  article {
+    border: none !important;
+    box-shadow: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+  }
+
+  .space-y-4,
+  .space-y-3,
+  .space-y-2 {
+    margin-top: 0 !important;
+    margin-bottom: 0 !important;
+  }
+
+  .overflow-x-auto,
+  .overflow-hidden {
+    overflow: visible !important;
+  }
+
+  /* Always show desktop tables in print, hide mobile card stacks */
+  .lg\:block,
+  .hidden.lg\:block {
+    display: block !important;
+  }
+
+  .lg\:hidden,
+  .block.lg\:hidden,
+  div.block.lg\:hidden,
+  .space-y-3.lg\:hidden,
+  .space-y-3\.5.lg\:hidden,
+  .space-y-4.lg\:hidden {
+    display: none !important;
+  }
+
+  /* Clean print table styling with solid smooth high-contrast borders and locked column widths */
+  table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    border: 1px solid #cbd5e1 !important;
+    margin-top: 8px !important;
+    margin-bottom: 0 !important;
+    table-layout: fixed !important;
+    page-break-inside: auto !important;
+  }
+
+  tr {
+    page-break-inside: avoid !important;
+    page-break-after: auto !important;
+  }
+
+  thead {
+    display: table-header-group !important;
+  }
+
+  thead th {
+    background-color: #0f172a !important;
+    color: #ffffff !important;
+    font-weight: 800 !important;
+    font-size: 7.5pt !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.04em !important;
+    padding: 5px 6px !important;
+    border: 1px solid #334155 !important;
+    white-space: nowrap !important;
+  }
+
+  tbody td {
+    border: 1px solid #cbd5e1 !important;
+    padding: 5px 8px !important;
+    color: #0f172a !important;
+    font-size: 8pt !important;
+    background: #ffffff !important;
+    word-wrap: break-word !important;
+  }
+
+  tbody tr:nth-child(even) td {
+    background-color: #f8fafc !important;
+  }
+
+  /* tfoot must display as table-row-group so it ONLY prints at the end of the full table (not repeating on page 1) */
+  tfoot {
+    display: table-row-group !important;
+    page-break-inside: avoid !important;
+  }
+
+  tfoot td {
+    background-color: #f1f5f9 !important;
+    border: 1px solid #cbd5e1 !important;
+    padding: 6px 8px !important;
+    color: #0f172a !important;
+    font-size: 8.5pt !important;
+    font-weight: 800 !important;
+    word-wrap: break-word !important;
+  }
+
+  /* Hide print-hidden elements */
+  .print\:hidden {
+    display: none !important;
+  }
+
+  .print\:block {
+    display: block !important;
+  }
+
+  /* Premium Print Typography & Component Adjustments */
+  .print-brand-title {
+    font-family: Georgia, Cambria, "Times New Roman", Times, serif !important;
+    letter-spacing: 0.2em !important;
+    color: #032b69 !important;
+  }
+}
