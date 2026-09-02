@@ -6,17 +6,25 @@ import {
   ShoppingCart, Package, DollarSign, Users, LayoutDashboard,
   AlertCircle, Leaf, ChevronRight, CheckCircle2,
   ArrowUpRight, ArrowDownRight, Minus, BarChart3, TrendingUp, ShieldAlert,
-  Sparkles, X
+  Sparkles, X, CalendarDays
 } from 'lucide-react';
+import { getCurrentMonthRange, getPresetDateRange, formatDateToYMD, isDateInRange } from '../utils/dateHelper';
+import DateInput from '../components/DateInput';
 
 export default function Dashboard({ onTabSelect }) {
   const { apiRequest } = useAuth();
   const [stats, setStats] = useState(null);
+  const [salesList, setSalesList] = useState([]);
+  const [purchaseList, setPurchaseList] = useState([]);
   const [loading, setLoading] = useState(true);
   const [hoveredPoint, setHoveredPoint] = useState(null);
   const [chartType, setChartType] = useState('bar');
   const [selectedCard, setSelectedCard] = useState(null);
   const [rippleMap, setRippleMap] = useState({});
+  const initialDates = getCurrentMonthRange();
+  const [period, setPeriod] = useState('thisMonth');
+  const [fromDate, setFromDate] = useState(initialDates.fromDate);
+  const [toDate, setToDate] = useState(initialDates.toDate);
   const cardRefs = useRef({});
 
   const handleCardClick = useCallback((e, cardId) => {
@@ -32,12 +40,47 @@ export default function Dashboard({ onTabSelect }) {
     setSelectedCard(cardId === selectedCard ? null : cardId);
   }, [selectedCard]);
 
+  const handlePeriodChange = (presetType) => {
+    setPeriod(presetType);
+    if (presetType !== 'custom') {
+      const range = getPresetDateRange(presetType);
+      setFromDate(range.fromDate);
+      setToDate(range.toDate);
+    }
+  };
+
   useEffect(() => {
-    apiRequest('/report/get-dashboard-stats')
-      .then(res => setStats(res.data))
+    Promise.all([
+      apiRequest('/report/get-dashboard-stats'),
+      apiRequest('/sales'),
+      apiRequest('/purchase')
+    ])
+      .then(([statsRes, salesRes, purchaseRes]) => {
+        setStats(statsRes.data);
+        setSalesList(Array.isArray(salesRes.data) ? salesRes.data : []);
+        setPurchaseList(Array.isArray(purchaseRes.data) ? purchaseRes.data : []);
+      })
       .catch(console.error)
       .finally(() => setLoading(false));
   }, []);
+
+  // Compute period/date-filtered totals (Auto-resets on 1st of every month)
+  const getFilteredMetrics = () => {
+    const filteredSales = salesList.filter(s => isDateInRange(s.saleDate, fromDate, toDate));
+    const filteredPurchases = purchaseList.filter(p => isDateInRange(p.purchaseDate, fromDate, toDate));
+
+    const totalSales = filteredSales.filter(s => s.status !== 'CANCELLED').reduce((sum, s) => sum + (Number(s.totalAmount) || 0), 0);
+    const totalPurchases = filteredPurchases.filter(p => p.status !== 'CANCELLED').reduce((sum, p) => sum + (Number(p.totalAmount) || 0), 0);
+
+    return {
+      totalSales: (!fromDate && !toDate && stats?.totalSales !== undefined) ? stats.totalSales : totalSales,
+      totalPurchases: (!fromDate && !toDate && stats?.totalPurchases !== undefined) ? stats.totalPurchases : totalPurchases,
+      salesCount: filteredSales.length,
+      purchasesCount: filteredPurchases.length
+    };
+  };
+
+  const periodMetrics = getFilteredMetrics();
 
   if (loading) {
     return (
@@ -48,41 +91,53 @@ export default function Dashboard({ onTabSelect }) {
     );
   }
 
+  const periodLabels = {
+    thisMonth: 'This Month',
+    today: 'Today',
+    lastMonth: 'Last Month',
+    quarter: 'This Quarter',
+    year: 'This Year',
+    all: 'All Time',
+    custom: 'Custom Range'
+  };
+
+  const currentPeriodLabel = periodLabels[period] || (fromDate && toDate ? `${fromDate} to ${toDate}` : 'Selected Period');
+
   const cards = [
     {
-      id: 0, title: 'Total Sales', shortTitle: 'Sales',
-      value: `₹${stats?.totalSales?.toLocaleString() || '0'}`,
+      id: 0, title: `Total Sales (${currentPeriodLabel})`, shortTitle: 'Sales',
+      value: `₹${periodMetrics.totalSales.toLocaleString()}`,
       icon: ShoppingCart, gradient: 'from-emerald-400 to-teal-500',
       glow: 'shadow-emerald-200', iconBg: 'bg-white/25',
-      trend: '+12%', trendUp: true, tab: 'sales', desc: 'Total revenue from all invoices'
+      trend: `${periodMetrics.salesCount} Invoices`, trendUp: true, tab: 'sales', desc: `Revenue from ${currentPeriodLabel} invoices`
     },
     {
-      id: 1, title: 'Total Purchases', shortTitle: 'Purchases',
-      value: `₹${stats?.totalPurchases?.toLocaleString() || '0'}`,
+      id: 1, title: `Total Purchases (${currentPeriodLabel})`, shortTitle: 'Purchases',
+      value: `₹${periodMetrics.totalPurchases.toLocaleString()}`,
       icon: Package, gradient: 'from-amber-400 to-orange-500',
       glow: 'shadow-amber-200', iconBg: 'bg-white/25',
-      trend: '+8%', trendUp: true, tab: 'purchase', desc: 'Stock intake cost this period'
+      trend: `${periodMetrics.purchasesCount} Orders`, trendUp: true, tab: 'purchase', desc: `Stock intake cost for ${currentPeriodLabel}`
     },
     {
       id: 2, title: 'Cash In Hand', shortTitle: 'Cash',
       value: `₹${stats?.cashInHand?.toLocaleString() || '0'}`,
       icon: DollarSign, gradient: 'from-blue-500 to-indigo-600',
       glow: 'shadow-blue-200', iconBg: 'bg-white/25',
-      trend: '-5%', trendUp: false, tab: 'account', desc: 'Available balance across accounts'
+      trend: 'Live', trendUp: null, tab: 'account', desc: 'Available balance across accounts'
     },
     {
       id: 3, title: 'Partner Equity', shortTitle: 'Equity',
       value: `₹${stats?.netPartnerEquity?.toLocaleString() || '0'}`,
       icon: Users, gradient: 'from-violet-500 to-purple-600',
       glow: 'shadow-violet-200', iconBg: 'bg-white/25',
-      trend: '0%', trendUp: null, tab: 'partner', desc: 'Net equity across business partners'
+      trend: 'Net Balance', trendUp: null, tab: 'account', desc: 'Net equity across business partners'
     },
     {
       id: 4, title: 'Active Products', shortTitle: 'Products',
       value: stats?.activeProductsCount || '0',
       icon: LayoutDashboard, gradient: 'from-pink-400 to-rose-500',
       glow: 'shadow-pink-200', iconBg: 'bg-white/25',
-      trend: '0%', trendUp: true, tab: 'product', desc: 'Products currently in catalog'
+      trend: 'Catalog Active', trendUp: true, tab: 'product', desc: 'Products currently in catalog'
     },
     {
       id: 5, title: 'Low Stock Alerts', shortTitle: 'Alerts',
@@ -128,18 +183,68 @@ export default function Dashboard({ onTabSelect }) {
     <div className="space-y-4">
 
       {/* ── Page Header ── */}
-      <div className="flex items-center justify-between">
-        <div>
+      <div className="flex flex-col gap-0.5">
+        <div className="flex items-center justify-between gap-2">
           <h2 className="text-xl sm:text-2xl font-extrabold text-slate-800 flex items-center gap-2">
-            <Sparkles size={20} className="text-brand-accent" />
-            Dashboard
+            <Sparkles size={20} className="text-brand-accent shrink-0" />
+            <span>Dashboard</span>
           </h2>
-          <p className="text-slate-400 text-xs mt-0.5">Click any card to view details</p>
+
+          <span className="text-[10px] font-bold text-slate-500 bg-[#fff7f9] border border-slate-200/80 px-2.5 py-1 rounded-full shadow-xs shrink-0 whitespace-nowrap">
+            Live Analytics
+          </span>
         </div>
-        <span className="text-[10px] font-bold text-slate-400 bg-[#fff7f9] border border-slate-200 px-2.5 py-1 rounded-full shadow-sm">
-          Live Metrics
-        </span>
+        <p className="text-slate-400 text-xs mt-0.5">Live performance metrics & business overview</p>
       </div>
+
+      {/* ── Interactive Date Filter Bar ── */}
+      <section className="bg-[#fff7f9] rounded-2xl p-2 sm:p-2.5 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden items-stretch lg:items-center justify-between">
+        {/* Preset Selector */}
+        <div className="flex items-center gap-1 overflow-x-auto pb-1 lg:pb-0 scrollbar-none">
+          {[
+            { id: 'thisMonth', label: 'This Month' },
+            { id: 'today', label: 'Today' },
+            { id: 'lastMonth', label: 'Last Month' },
+            { id: 'quarter', label: 'This Quarter' },
+            { id: 'year', label: 'This Year' },
+            { id: 'all', label: 'All Time' }
+          ].map(p => (
+            <button
+              key={p.id}
+              onClick={() => handlePeriodChange(p.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
+                period === p.id 
+                  ? 'bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-md shadow-brand-accent/20' 
+                  : 'text-slate-600 hover:text-slate-900 bg-slate-50 hover:bg-slate-100 border border-slate-100'
+              }`}
+            >
+              {p.label}
+            </button>
+          ))}
+        </div>
+
+        {/* Date Picker Range Inputs */}
+        <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-9 shrink-0">
+          <CalendarDays size={13} className="text-slate-400 shrink-0" />
+          <DateInput 
+            value={fromDate}
+            onChange={e => {
+              setFromDate(e.target.value);
+              setPeriod('custom');
+            }}
+            className="min-w-[90px] sm:w-[105px]"
+          />
+          <span className="text-slate-300 text-[10px] shrink-0">-</span>
+          <DateInput 
+            value={toDate}
+            onChange={e => {
+              setToDate(e.target.value);
+              setPeriod('custom');
+            }}
+            className="min-w-[90px] sm:w-[105px]"
+          />
+        </div>
+      </section>
 
       {/* ── Metric Cards Grid ── */}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-2 sm:gap-3">

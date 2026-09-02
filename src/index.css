@@ -143,29 +143,73 @@ option {
 
 /* =========================================================
    MOBILE NATIVE DATEPICKER VISIBILITY OVERRIDES
+   Forces dd-mm-yyyy placeholder text to be visible on
+   Android WebView which can hide it via color, opacity,
+   visibility, or display overrides in dark/system themes.
 ========================================================= */
 input[type="date"] {
   color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
   background-color: transparent !important;
   font-family: inherit;
-  font-size: 11px !important;
-  font-weight: 600 !important;
-  padding: 0 !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  padding: 0 2px !important;
   margin: 0 !important;
   height: 100% !important;
-  min-height: 0 !important;
+  min-height: 24px !important;
   box-sizing: border-box;
   border: none !important;
   outline: none !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  line-height: normal !important;
 }
 
-input[type="date"]::-webkit-datetime-edit,
-input[type="date"]::-webkit-datetime-edit-fields-wrapper,
+/* Force internal date edit container visible */
+input[type="date"]::-webkit-datetime-edit {
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: inline-flex !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+input[type="date"]::-webkit-datetime-edit-fields-wrapper {
+  color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: inline-flex !important;
+  padding: 0 !important;
+  overflow: visible !important;
+}
+
+/* Force each date segment (day, month, year, separators) visible */
 input[type="date"]::-webkit-datetime-edit-text,
 input[type="date"]::-webkit-datetime-edit-month-field,
 input[type="date"]::-webkit-datetime-edit-day-field,
 input[type="date"]::-webkit-datetime-edit-year-field {
   color: #334155 !important;
+  -webkit-text-fill-color: #334155 !important;
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: inline !important;
+  padding: 1px !important;
+  font-size: 12px !important;
+  font-weight: 700 !important;
+  letter-spacing: 0.02em;
+}
+
+/* Ensure calendar icon is visible */
+input[type="date"]::-webkit-calendar-picker-indicator {
+  opacity: 1 !important;
+  visibility: visible !important;
+  display: block !important;
+  cursor: pointer;
+  filter: none !important;
 }
 
 /* =========================================================
@@ -350,7 +394,11 @@ body:has(.fixed.z-50) {
   }
 
   /* Hide print-hidden elements */
-  .print\:hidden {
+  .print\:hidden,
+  .hidden.print\:hidden,
+  .lg\:block.print\:hidden,
+  .hidden.lg\:block.print\:hidden,
+  [class*="print:hidden"] {
     display: none !important;
   }
 
@@ -365,3 +413,38 @@ body:has(.fixed.z-50) {
     color: #032b69 !important;
   }
 }
+
+/* Global Fix for Android WebView Date Pickers Invisible Text */
+input[type="date"] {
+  color-scheme: light !important;
+}
+
+/* Custom Date Overlay: makes native date input text completely invisible while preserving tap-to-pick */
+input[type="date"].custom-date-overlay {
+  opacity: 0 !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+  background: transparent !important;
+  cursor: pointer !important;
+}
+
+input[type="date"].custom-date-overlay::-webkit-datetime-edit,
+input[type="date"].custom-date-overlay::-webkit-datetime-edit-fields-wrapper,
+input[type="date"].custom-date-overlay::-webkit-datetime-edit-text,
+input[type="date"].custom-date-overlay::-webkit-datetime-edit-month-field,
+input[type="date"].custom-date-overlay::-webkit-datetime-edit-day-field,
+input[type="date"].custom-date-overlay::-webkit-datetime-edit-year-field {
+  opacity: 0 !important;
+  color: transparent !important;
+  -webkit-text-fill-color: transparent !important;
+}
+
+input[type="date"].custom-date-overlay::-webkit-calendar-picker-indicator {
+  position: absolute !important;
+  inset: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  opacity: 0 !important;
+  cursor: pointer !important;
+}
+

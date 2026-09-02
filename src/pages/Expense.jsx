@@ -2,6 +2,10 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Trash2, Search, ChevronRight, ChevronDown, Pencil, DollarSign, WalletCards, Lock, Unlock } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { sendWhatsAppNotificationToPartners, createExpenseWhatsAppMessage } from '../utils/whatsappHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function Expense() {
   const { apiRequest } = useAuth();
@@ -32,14 +36,49 @@ export default function Expense() {
     accountId: ''
   });
 
+  // Split payment & In-Hand Cash States
+  const [transactions, setTransactions] = useState([]);
+  const [isSplitExpense, setIsSplitExpense] = useState(false);
+  const [expenseContributions, setExpenseContributions] = useState([]);
+
   const loadData = () => {
-    apiRequest('/expense').then(res => setExpenses(res.data)).catch(console.error);
-    apiRequest('/account').then(res => setAccounts(res.data)).catch(console.error);
+    apiRequest('/expense').then(res => setExpenses(sortLatestFirst(res.data, ['transactionId', 'expenseId', 'id'], 'expense'))).catch(console.error);
+    apiRequest('/account/transactions').then(res => setTransactions(Array.isArray(res.data) ? res.data : [])).catch(console.error);
+    apiRequest('/account').then(res => {
+      const accs = Array.isArray(res.data) ? res.data : [];
+      setAccounts(accs);
+      if (accs.length > 0) {
+        setForm(prev => ({
+          ...prev,
+          accountId: prev.accountId && accs.some(a => String(a.accountId) === String(prev.accountId)) ? prev.accountId : accs[0].accountId
+        }));
+      }
+    }).catch(console.error);
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const getAccountInHand = (accIdOrName) => {
+    const acc = accounts.find(a => String(a.accountId) === String(accIdOrName) || a.accountName === accIdOrName);
+    if (!acc) return 0;
+    const accTxs = transactions.filter(t => t.accountId === acc.accountId);
+    const credits = accTxs.filter(t => t.transactionType === 'CREDIT').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const debits = accTxs.filter(t => t.transactionType === 'DEBIT').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    return credits - debits;
+  };
+
+  const addContributionRow = () => {
+    const unusedAcc = accounts.find(a => !expenseContributions.some(c => String(c.accountId) === String(a.accountId))) || accounts[0];
+    setExpenseContributions([...expenseContributions, { accountId: unusedAcc?.accountId || '', amount: 0 }]);
+  };
+  const removeContributionRow = (idx) => {
+    setExpenseContributions(expenseContributions.filter((_, i) => i !== idx));
+  };
+  const updateContribution = (idx, field, val) => {
+    setExpenseContributions(expenseContributions.map((c, i) => i === idx ? { ...c, [field]: val } : c));
+  };
 
   const isPeriodClosed = selectedMonth !== 'all' && lockedMonths.includes(selectedMonth);
 
@@ -77,14 +116,51 @@ export default function Expense() {
       Swal.fire('Locked', 'This accounting period is closed. Re-open to register expenses.', 'warning');
       return;
     }
-    if (!form.accountId) {
+    if (!form.accountId && !isSplitExpense) {
       Swal.fire('Warning', 'Please select a debit account', 'warning');
       return;
     }
+
+    const expAmt = parseFloat(form.amount) || 0;
+    if (expAmt <= 0) {
+      Swal.fire('Warning', 'Please enter a valid expense amount', 'warning');
+      return;
+    }
+
+    // Strict in-hand cash validation
+    if (isSplitExpense) {
+      const totalSplit = expenseContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+      if (Math.abs(totalSplit - expAmt) > 0.01) {
+        Swal.fire('Split Mismatch', `The sum of partner payments (₹${totalSplit.toLocaleString()}) must equal the expense amount (₹${expAmt.toLocaleString()}).`, 'warning');
+        return;
+      }
+      for (const c of expenseContributions) {
+        const cAmt = parseFloat(c.amount) || 0;
+        if (cAmt > 0) {
+          const avail = getAccountInHand(c.accountId);
+          const acc = accounts.find(a => String(a.accountId) === String(c.accountId));
+          if (cAmt > avail) {
+            Swal.fire('Insufficient Funds', `Insufficient Cash In-Hand in ${acc?.accountName || 'Account'}. Available: ₹${avail.toLocaleString()}, but trying to spend ₹${cAmt.toLocaleString()}. Please record partner investment first.`, 'error');
+            return;
+          }
+        }
+      }
+    } else {
+      const avail = getAccountInHand(form.accountId);
+      const acc = accounts.find(a => String(a.accountId) === String(form.accountId));
+      if (expAmt > avail) {
+        Swal.fire('Insufficient Funds', `Insufficient Cash In-Hand in ${acc?.accountName || 'Account'}. Available: ₹${avail.toLocaleString()}, but trying to spend ₹${expAmt.toLocaleString()}. Please record partner investment first.`, 'error');
+        return;
+      }
+    }
+
     const payload = {
       description: form.desc,
-      amount: parseFloat(form.amount),
-      accountId: parseInt(form.accountId)
+      amount: expAmt,
+      accountId: parseInt(form.accountId) || (accounts[0]?.accountId || 1),
+      contributions: isSplitExpense 
+        ? expenseContributions.map(c => ({ accountId: parseInt(c.accountId), amount: parseFloat(c.amount) || 0 }))
+        : null
     };
     try {
       if (editingId) {
@@ -92,13 +168,31 @@ export default function Expense() {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
+        markItemAsUpdated('expense', editingId);
         Swal.fire('Success', 'Expense record updated!', 'success');
       } else {
         await apiRequest('/expense/create-expense', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        Swal.fire('Success', 'Expense outflow recorded!', 'success');
+
+        const acc = accounts.find(a => String(a.accountId) === String(form.accountId));
+        const waMsg = createExpenseWhatsAppMessage({
+          desc: form.desc,
+          amount: form.amount,
+          accountName: acc?.accountName || 'Cash Account',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'EXPENSE_CREATE',
+          referenceId: form.desc,
+          category: 'EXPENSE',
+          actionType: 'CREATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Expense outflow recorded & Partners alerted via WhatsApp!', 'success');
       }
       setForm({ desc: '', amount: '', accountId: '' });
       setEditingId(null);
@@ -109,6 +203,11 @@ export default function Expense() {
     }
   };
 
+  const cleanExpenseDesc = (desc) => {
+    if (!desc) return '';
+    return desc.replace(/\s*\([₹Rs\d\.,\s]+\)$/i, '').trim();
+  };
+
   const handleEdit = (e) => {
     if (isPeriodClosed) {
       Swal.fire('Locked', 'This period is closed. You cannot edit past expenses.', 'warning');
@@ -116,7 +215,7 @@ export default function Expense() {
     }
     setEditingId(e.transactionId);
     setForm({
-      desc: e.description,
+      desc: cleanExpenseDesc(e.description),
       amount: e.amount,
       accountId: e.accountId
     });
@@ -147,19 +246,23 @@ export default function Expense() {
     }
   };
 
-  const filteredExpenses = expenses.filter(e => {
-    const date = new Date(e.expenseDate || e.createdAt);
-    if (selectedMonth !== 'all') {
-      const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      if (monthKey !== selectedMonth) return false;
-    }
+  const filteredExpenses = sortLatestFirst(
+    expenses.filter(e => {
+      const date = new Date(e.expenseDate || e.createdAt);
+      if (selectedMonth !== 'all') {
+        const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+        if (monthKey !== selectedMonth) return false;
+      }
 
-    const term = search.toLowerCase();
-    return (
-      e.description?.toLowerCase().includes(term) ||
-      e.account?.accountName?.toLowerCase().includes(term)
-    );
-  });
+      const term = search.toLowerCase();
+      return (
+        e.description?.toLowerCase().includes(term) ||
+        e.account?.accountName?.toLowerCase().includes(term)
+      );
+    }),
+    ['transactionId', 'expenseId', 'id'],
+    'expense'
+  );
 
   const money = (value) =>
     new Intl.NumberFormat("en-IN", {
@@ -205,7 +308,7 @@ export default function Expense() {
         <div className="grid grid-cols-3 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Active Ledger Month</span>
@@ -224,18 +327,18 @@ export default function Expense() {
       
       
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Accounting & Finance</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-brand-accent">Expenses Ledger</span>
-        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Accounting & Finance</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Expenses Ledger</span>
+          </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             General Expenses
           </h1>
           <div className="flex gap-2 shrink-0">
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
@@ -289,7 +392,13 @@ export default function Expense() {
       ===================================================== */}
       <section className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 print:hidden">
         {/* Card 1: Total Expenses */}
-        <div className="bg-[#fff7f9] rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setSelectedMonth(selectedMonth === 'all' ? (getMonthsList()[0] || 'all') : 'all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to toggle All Months / Active Month"
+        >
           <div className="absolute -right-4 -top-4 w-12 h-12 sm:w-14 sm:h-14 bg-rose-50 rounded-full transition-transform group-hover:scale-150 pointer-events-none" />
           <div className="flex items-center gap-2 mb-2 relative z-10">
             <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 shadow-sm">
@@ -301,7 +410,13 @@ export default function Expense() {
         </div>
 
         {/* Card 2: Closing Status */}
-        <div className="bg-[#fff7f9] rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={togglePeriodLock}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-3 sm:p-4 shadow-sm border border-slate-100 flex flex-col justify-between hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to toggle Open / Close Accounting Period"
+        >
           <div className={`absolute -right-4 -top-4 w-12 h-12 sm:w-14 sm:h-14 ${isPeriodClosed ? 'bg-rose-50' : 'bg-emerald-50'} rounded-full transition-transform group-hover:scale-150 pointer-events-none`} />
           <div className="flex items-center gap-2 mb-2 relative z-10">
             <div className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl shadow-sm ${isPeriodClosed ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
@@ -416,7 +531,10 @@ export default function Expense() {
               ) : (
                 filteredExpenses.map((e) => (
                   <tr key={e.transactionId} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="px-5 py-3 font-bold text-slate-800 text-xs">{e.description}</td>
+                    <td className="px-5 py-3">
+                      <span className="font-bold text-slate-800 text-xs block">{cleanExpenseDesc(e.description)}</span>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{formatDateDDMMYYYY(e.expenseDate || e.createdAt)}</span>
+                    </td>
                     <td className="px-5 py-3">
                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
                         {e.account?.accountName || `Account #${e.accountId}`}
@@ -495,13 +613,13 @@ export default function Expense() {
                     </div>
                     <div>
                       <h3 className="text-sm font-black text-white leading-tight line-clamp-1 mb-1">
-                        {e.description}
+                        {cleanExpenseDesc(e.description)}
                       </h3>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-blue-200 font-mono tracking-wider">{e.account?.accountName || `Acc #${e.accountId}`}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-400"></span>
                         <span className="text-[10px] font-medium text-slate-300">
-                          {new Date(e.expenseDate || e.createdAt).toLocaleDateString()}
+                          {formatDateDDMMYYYY(e.expenseDate || e.createdAt)}
                         </span>
                       </div>
                     </div>
@@ -594,17 +712,151 @@ export default function Expense() {
                 />
               </div>
 
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Debit Account</label>
-                <select
-                  value={form.accountId}
-                  onChange={(e) => setForm({ ...form, accountId: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                  required
-                >
-                  <option value="">Select Account</option>
-                  {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
-                </select>
+              {/* Debit Account Selection & Multi-Partner Split */}
+              <div className="bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                    Debit Account / Partners
+                  </label>
+                  {accounts.length > 1 && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const nextSplit = !isSplitExpense;
+                        setIsSplitExpense(nextSplit);
+                        if (nextSplit && expenseContributions.length === 0) {
+                          const amt = parseFloat(form.amount) || 0;
+                          setExpenseContributions(
+                            accounts.map((a, i) => ({
+                              accountId: a.accountId,
+                              amount: i === 0 ? amt : 0
+                            }))
+                          );
+                        }
+                      }}
+                      className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors shadow-sm"
+                    >
+                      {isSplitExpense ? 'Single Account' : '👥 Split Across Partners'}
+                    </button>
+                  )}
+                </div>
+
+                {!isSplitExpense ? (
+                  <div>
+                    <select
+                      value={form.accountId}
+                      onChange={(e) => setForm({ ...form, accountId: e.target.value })}
+                      className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all"
+                      required
+                    >
+                      <option value="">Select Account</option>
+                      {accounts.map(a => {
+                        const inHand = getAccountInHand(a.accountId);
+                        return (
+                          <option key={a.accountId} value={a.accountId}>
+                            {a.accountName} (In-Hand: ₹{inHand.toLocaleString()})
+                          </option>
+                        );
+                      })}
+                    </select>
+
+                    {form.accountId && (
+                      <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-slate-500">Available In-Hand:</span>
+                        <span className={`font-mono ${getAccountInHand(form.accountId) <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}`}>
+                          ₹{getAccountInHand(form.accountId).toLocaleString()}
+                        </span>
+                      </div>
+                    )}
+
+                    {parseFloat(form.amount) > getAccountInHand(form.accountId) && parseFloat(form.amount) > 0 && form.accountId && (
+                      <div className="mt-2 p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold leading-tight">
+                        ⚠️ Insufficient In-Hand Cash (Available: ₹{getAccountInHand(form.accountId).toLocaleString()}). Please record partner investment first.
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {expenseContributions.map((contrib, cIdx) => {
+                      const inHand = getAccountInHand(contrib.accountId);
+                      const isOver = parseFloat(contrib.amount) > inHand;
+                      return (
+                        <div key={cIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+                          <div className="flex gap-2 items-center">
+                            <select
+                              value={contrib.accountId}
+                              onChange={(e) => updateContribution(cIdx, 'accountId', e.target.value)}
+                              className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                            >
+                              {accounts.map(a => (
+                                <option key={a.accountId} value={a.accountId}>
+                                  {a.accountName}
+                                </option>
+                              ))}
+                            </select>
+                            <div className="relative w-1/2 flex items-center">
+                              <span className="absolute left-2 text-xs font-bold text-slate-400">₹</span>
+                              <input
+                                type="number"
+                                step="any"
+                                value={contrib.amount}
+                                onChange={(e) => updateContribution(cIdx, 'amount', e.target.value)}
+                                className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 text-xs font-bold text-slate-900"
+                                placeholder="Amount"
+                              />
+                              {expenseContributions.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => removeContributionRow(cIdx)}
+                                  className="ml-1 p-1 text-rose-500 hover:text-rose-700 rounded-md"
+                                >
+                                  ✕
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                          <div className="flex justify-between text-[10px] font-bold">
+                            <span className="text-slate-400">Available: <span className={inHand <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700 font-mono'}>₹{inHand.toLocaleString()}</span></span>
+                            {isOver && <span className="text-rose-600 font-bold">⚠️ Exceeds In-Hand</span>}
+                          </div>
+                        </div>
+                      );
+                    })}
+
+                    <div className="flex justify-between items-center pt-1 gap-2 flex-wrap">
+                      <div className="flex gap-2">
+                        <button
+                          type="button"
+                          onClick={addContributionRow}
+                          className="text-[10px] font-bold text-brand-accent hover:text-blue-700 flex items-center gap-1"
+                        >
+                          + Add Partner
+                        </button>
+                        {parseFloat(form.amount) > 0 && expenseContributions.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const total = parseFloat(form.amount) || 0;
+                              const split = Math.round((total / expenseContributions.length) * 100) / 100;
+                              setExpenseContributions(expenseContributions.map((c, i) => ({
+                                ...c,
+                                amount: i === expenseContributions.length - 1 ? parseFloat((total - (split * (expenseContributions.length - 1))).toFixed(2)) : split
+                              })));
+                            }}
+                            className="text-[10px] font-bold text-slate-500 hover:text-slate-800"
+                          >
+                            [ Split Equally ]
+                          </button>
+                        )}
+                      </div>
+                      <div className="text-[11px] font-mono font-bold text-slate-700">
+                        Total Split: <span className={Math.abs(expenseContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0) - parseFloat(form.amount || 0)) < 0.01 ? 'text-emerald-600' : 'text-amber-600'}>
+                          ₹{expenseContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0).toLocaleString()}
+                        </span> / ₹{parseFloat(form.amount || 0).toLocaleString()}
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">

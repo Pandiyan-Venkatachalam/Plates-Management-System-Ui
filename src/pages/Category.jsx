@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Plus, Trash2, Search, ChevronRight, Pencil, Layers } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function Category() {
   const { apiRequest } = useAuth();
@@ -14,7 +17,7 @@ export default function Category() {
 
   const loadData = () => {
     apiRequest('/category')
-      .then(res => setCategories(res.data))
+      .then(res => setCategories(sortLatestFirst(res.data, ['categoryId', 'id'], 'category')))
       .catch(console.error);
   };
 
@@ -30,6 +33,7 @@ export default function Category() {
           method: 'PUT',
           body: JSON.stringify({ categoryName: name })
         });
+        markItemAsUpdated('category', editingId);
         Swal.fire('Success', 'Category updated!', 'success');
       } else {
         await apiRequest('/category', {
@@ -73,8 +77,12 @@ export default function Category() {
     }
   };
 
-  const filteredCategories = categories.filter(c => 
-    c.categoryName?.toLowerCase().includes(search.toLowerCase())
+  const filteredCategories = sortLatestFirst(
+    categories.filter(c => 
+      c.categoryName?.toLowerCase().includes(search.toLowerCase())
+    ),
+    ['categoryId', 'id'],
+    'category'
   );
 
   return (
@@ -105,7 +113,7 @@ export default function Category() {
         <div className="grid grid-cols-2 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Product Categories</span>
@@ -118,19 +126,19 @@ export default function Category() {
           HEADER
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Products & Stock</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-brand-accent">Categories</span>
-        </div>
-        <div className="flex justify-between items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
+        <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Products & Stock</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Categories</span>
+          </div>
+        <div className="flex flex-row justify-between items-center gap-2">
+          <h1 className="text-lg sm:text-2xl leading-none font-black tracking-tight text-slate-900 shrink-0">
             Product Categories
           </h1>
           <div className="flex gap-2 shrink-0">
             <button
-              onClick={() => window.print()}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+              onClick={handlePrint}
+              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2.5 sm:px-3 py-2 text-[10px] sm:text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
               <span className="hidden sm:inline">Print Report</span>
@@ -141,10 +149,11 @@ export default function Category() {
                 setName('');
                 setShowCreateForm(true);
               }}
-              className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+              className="flex shrink-0 items-center justify-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-[10px] sm:text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
             >
               <Plus size={14} strokeWidth={3} />
-              New Category
+              <span className="hidden sm:inline">New Category</span>
+              <span className="sm:hidden">New</span>
             </button>
           </div>
         </div>

@@ -1,5 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+import { sortLatestFirst } from '../utils/sortHelper';
+import { formatDateDDMMYYYY, formatDateTimeDDMMYYYY } from '../utils/dateHelper';
 
 export default function More() {
   const { apiRequest, logout } = useAuth();
@@ -14,10 +16,10 @@ export default function More() {
   const [expenseForm, setExpenseForm] = useState({ amount: 0, desc: '', accountName: 'Cash' });
 
   const loadData = () => {
-    apiRequest('/partner').then(res => setPartners(res.data)).catch(console.error);
-    apiRequest('/partnerledger').then(res => setLedgers(res.data)).catch(console.error);
-    apiRequest('/account').then(res => setAccounts(res.data)).catch(console.error);
-    apiRequest('/report/get-audit-history').then(res => setAudit(res.data)).catch(console.error);
+    apiRequest('/partner').then(res => setPartners(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
+    apiRequest('/partnerledger').then(res => setLedgers(sortLatestFirst(res.data, ['ledgerId', 'id'], 'partnerledger'))).catch(console.error);
+    apiRequest('/account').then(res => setAccounts(sortLatestFirst(res.data, ['accountId', 'id'], 'account'))).catch(console.error);
+    apiRequest('/report/get-audit-history').then(res => setAudit(sortLatestFirst(res.data, ['auditId', 'id'], 'audit'))).catch(console.error);
   };
 
   useEffect(() => {
@@ -84,11 +86,11 @@ export default function More() {
           HEADER
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Settings</span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><path d="m9 18 6-6-6-6"/></svg>
-          <span className="text-brand-accent">More Modules</span>
-        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Settings</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">More Modules</span>
+          </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             More Management Modules
@@ -233,7 +235,7 @@ export default function More() {
                 <div key={idx} className="bg-slate-50/50 border border-slate-100 p-3 rounded-xl flex justify-between items-center hover:bg-slate-50 transition-colors">
                   <div>
                     <p className="text-slate-800 font-bold text-xs">{e.description}</p>
-                    <span className="text-slate-500 text-[10px] font-mono tracking-wider block mt-1">{new Date(e.createdAt).toLocaleDateString()}</span>
+                    <span className="text-slate-500 text-[10px] font-mono tracking-wider block mt-1">{formatDateDDMMYYYY(e.createdAt)}</span>
                   </div>
                   <span className="text-rose-600 font-mono font-bold text-xs">-₹{e.amount?.toLocaleString()}</span>
                 </div>
@@ -279,7 +281,7 @@ export default function More() {
                 </div>
                 <div className="text-right">
                   <span className="text-slate-800 font-bold text-xs">@{a.username}</span>
-                  <span className="text-slate-400 font-mono text-[10px] tracking-wider block mt-0.5">{new Date(a.timestamp).toLocaleString()}</span>
+                  <span className="text-slate-400 font-mono text-[10px] tracking-wider block mt-0.5">{formatDateTimeDDMMYYYY(a.timestamp)}</span>
                 </div>
               </div>
             ))}

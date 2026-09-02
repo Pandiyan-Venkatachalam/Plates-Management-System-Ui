@@ -8,40 +8,40 @@ function replaceFlexible(filePath, oldBlock, newBlock) {
   let content = fs.readFileSync(filePath, 'utf8');
   let cleanContent = clean(content);
   let cleanOld = clean(oldBlock);
-  
+
   let index = cleanContent.indexOf(cleanOld);
   if (index === -1) {
     return false;
   }
-  
+
   // We found a match. Now we need to find the exact start and end in the original content.
   // We can do this by scanning character by character.
   let contentIdx = 0;
   let cleanIdx = 0;
-  
+
   let matchStart = -1;
   let matchEnd = -1;
-  
+
   while (contentIdx < content.length && cleanIdx < cleanContent.length) {
     if (cleanIdx === index) {
       matchStart = contentIdx;
     }
-    
+
     const contentChar = content[contentIdx];
     if (/\s/.test(contentChar)) {
       contentIdx++;
       continue;
     }
-    
+
     if (cleanIdx === index + cleanOld.length) {
       matchEnd = contentIdx;
       break;
     }
-    
+
     cleanIdx++;
     contentIdx++;
   }
-  
+
   if (matchStart !== -1 && matchEnd !== -1) {
     const before = content.substring(0, matchStart);
     const after = content.substring(matchEnd);
@@ -49,7 +49,7 @@ function replaceFlexible(filePath, oldBlock, newBlock) {
     console.log(`Successfully updated: ${filePath}`);
     return true;
   }
-  
+
   return false;
 }
 
@@ -239,7 +239,7 @@ const oldPlBlock = `<section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-
           <div className="mb-2 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-blue-500/10 text-brand-accent border border-brand-accent/20">
             <BarChart2 size={16} />
           </div>
-          <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Total COGS</p>
+          <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Total Cost</p>
           <p className="mt-1 text-lg font-extrabold text-slate-800">{money(data.totalCost)}</p>
           <p className="text-[9px] text-slate-500 mt-0.5">Landed material cost of goods</p>
         </div>
@@ -283,7 +283,7 @@ const oldPlBlockActual = `<section className="grid grid-cols-2 gap-2 sm:gap-3 lg
           <div className="mb-2 flex h-8 w-8 sm:h-10 sm:w-10 items-center justify-center rounded-full bg-blue-500/10 text-brand-accent border border-brand-accent/20">
             <BarChart2 size={16} />
           </div>
-          <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Total COGS</p>
+          <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">Total Cost</p>
           <p className="mt-1 text-lg font-extrabold text-slate-800">{money(data.totalCost)}</p>
           <p className="text-[9px] text-slate-500 mt-0.5">Landed material cost of goods</p>
         </div>
@@ -328,7 +328,7 @@ const newPlBlock = `      <section className="grid grid-cols-2 gap-2 sm:gap-3 lg
             <BarChart2 size={16} className="hidden sm:block" />
           </div>
           <div className="min-w-0">
-            <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap leading-tight">Total COGS</p>
+            <p className="text-[8px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap leading-tight">Total Cost</p>
             <p className="text-xs sm:text-lg font-extrabold text-slate-800 leading-tight mt-0.5">{money(data.totalCost)}</p>
             <p className="hidden sm:block text-[9px] text-slate-500 leading-tight mt-0.5">Landed material cost</p>
           </div>

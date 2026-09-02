@@ -3,9 +3,17 @@ import { useAuth } from '../context/AuthContext';
 import { 
   Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown, 
   ChevronRight, FileText, CircleDollarSign, WalletCards, 
-  TrendingUp, MoreHorizontal, Pencil, Eye, CheckCircle
+  TrendingUp, MoreHorizontal, Pencil, Eye, CheckCircle, Download, X
 } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { downloadCsvCrossPlatform } from '../utils/exportCsv';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
+import { sendWhatsAppNotificationToPartners, createSalesWhatsAppMessage } from '../utils/whatsappHelper';
+import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
+import DateInput from '../components/DateInput';
 
 export default function Sales() {
   const { apiRequest } = useAuth();
@@ -19,10 +27,12 @@ export default function Sales() {
   // Modal / Form toggle state
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // Filters state
+  // Filters state - Default to Current Month (Auto-resets on 1st of every month)
+  const initialDates = getCurrentMonthRange();
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(initialDates.fromDate);
+  const [toDate, setToDate] = useState(initialDates.toDate);
+  const [datePreset, setDatePreset] = useState('thisMonth');
   const [balanceFilter, setBalanceFilter] = useState('all');
 
   // Form State
@@ -31,13 +41,20 @@ export default function Sales() {
   const [paidAmount, setPaidAmount] = useState(0);
   const [accountName, setAccountName] = useState('Cash');
   const [editingId, setEditingId] = useState(null);
+  const [editingSaleDate, setEditingSaleDate] = useState(null);
   const [adjustment, setAdjustment] = useState(0);
 
   const loadData = () => {
-    apiRequest('/sales').then(res => setSales(res.data)).catch(console.error);
-    apiRequest('/customer').then(res => setCustomers(res.data)).catch(console.error);
+    apiRequest('/sales').then(res => setSales(sortLatestFirst(res.data, ['saleId', 'id'], 'sales'))).catch(console.error);
+    apiRequest('/customer').then(res => setCustomers(sortLatestFirst(res.data, ['customerId', 'id'], 'customer'))).catch(console.error);
     apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
-    apiRequest('/account').then(res => setAccounts(res.data)).catch(console.error);
+    apiRequest('/account').then(res => {
+      const accs = Array.isArray(res.data) ? res.data : [];
+      setAccounts(accs);
+      if (accs.length > 0) {
+        setAccountName(prev => accs.some(a => a.accountName === prev) ? prev : accs[0].accountName);
+      }
+    }).catch(console.error);
     apiRequest('/batch').then(res => setBatches(res.data)).catch(console.error);
   };
 
@@ -55,28 +72,30 @@ export default function Sales() {
   const finalTotal = totalCost + (parseFloat(adjustment) || 0);
   const balanceDue = finalTotal - (parseFloat(paidAmount) || 0);
 
-  // Filter Sales Logic
-  const filteredSales = sales.filter(s => {
-    // Search filter
-    const matchesSearch = !search || 
-      (s.customerName && s.customerName.toLowerCase().includes(search.toLowerCase())) ||
-      (s.saleId && `INV-${s.saleId}`.toLowerCase().includes(search.toLowerCase()));
+  // Filter Sales Logic (latest and recently updated first)
+  const filteredSales = sortLatestFirst(
+    sales.filter(s => {
+      // Search filter
+      const matchesSearch = !search || 
+        (s.customerName && s.customerName.toLowerCase().includes(search.toLowerCase())) ||
+        (s.saleId && `INV-${s.saleId}`.toLowerCase().includes(search.toLowerCase()));
 
-    // Date range filter
-    const saleDate = new Date(s.saleDate).setHours(0, 0, 0, 0);
-    const matchesFrom = !fromDate || saleDate >= new Date(fromDate).setHours(0, 0, 0, 0);
-    const matchesTo = !toDate || saleDate <= new Date(toDate).setHours(0, 0, 0, 0);
+      // Date range filter using clean string comparison
+      const matchesDate = isDateInRange(s.saleDate, fromDate, toDate);
 
-    // Balance filter
-    let matchesBalance = true;
-    if (balanceFilter === 'paid') {
-      matchesBalance = (s.balanceAmount <= 0);
-    } else if (balanceFilter === 'due') {
-      matchesBalance = (s.balanceAmount > 0);
-    }
+      // Balance filter
+      let matchesBalance = true;
+      if (balanceFilter === 'paid') {
+        matchesBalance = (s.balanceAmount <= 0);
+      } else if (balanceFilter === 'due') {
+        matchesBalance = (s.balanceAmount > 0);
+      }
 
-    return matchesSearch && matchesFrom && matchesTo && matchesBalance;
-  });
+      return matchesSearch && matchesDate && matchesBalance;
+    }),
+    ['saleId', 'id'],
+    'sales'
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -98,13 +117,16 @@ export default function Sales() {
       paymentMethodAccountName: accountName
     };
     try {
+      const currentCust = customers.find(c => String(c.customerId) === String(customerId));
+      const customerName = currentCust?.customerName || 'Customer';
+
       if (editingId) {
         await apiRequest(`/sales/${editingId}`, {
           method: 'PUT',
           body: JSON.stringify({
             saleId: editingId,
             customerId: parseInt(customerId),
-            saleDate: new Date().toISOString(),
+            saleDate: editingSaleDate || new Date().toISOString(),
             details: items.map(i => ({
               productId: parseInt(i.productId),
               quantity: parseInt(i.quantity),
@@ -118,19 +140,62 @@ export default function Sales() {
             adjustment: parseFloat(adjustment) || 0
           })
         });
-        Swal.fire('Success', 'Invoice updated!', 'success');
+        markItemAsUpdated('sales', editingId);
+        
+        // Automated WhatsApp Notification to Partners
+        const waMsg = createSalesWhatsAppMessage({
+          saleId: editingId,
+          customerName,
+          totalAmount: finalTotal,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, finalTotal - parseFloat(paidAmount)),
+          paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'PARTIAL',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'SALES_UPDATE',
+          referenceId: String(editingId),
+          category: 'SALES',
+          actionType: 'UPDATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Invoice updated & WhatsApp alert sent!', 'success');
       } else {
-        await apiRequest('/sales/create-sale', {
+        const createRes = await apiRequest('/sales/create-sale', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        Swal.fire('Success', 'Sale transaction recorded successfully!', 'success');
+        const createdSaleId = createRes?.data?.saleId || 'New';
+
+        // Automated WhatsApp Notification to Partners
+        const waMsg = createSalesWhatsAppMessage({
+          saleId: createdSaleId,
+          customerName,
+          totalAmount: finalTotal,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, finalTotal - parseFloat(paidAmount)),
+          paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'UNPAID',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'SALES_CREATE',
+          referenceId: String(createdSaleId),
+          category: 'SALES',
+          actionType: 'CREATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Sale transaction recorded & Partners alerted via WhatsApp!', 'success');
       }
       setItems([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
       setCustomerId('');
       setPaidAmount(0);
       setAdjustment(0);
       setEditingId(null);
+      setEditingSaleDate(null);
       setShowCreateForm(false);
       loadData();
     } catch (err) {
@@ -140,6 +205,7 @@ export default function Sales() {
 
   const handleEdit = (s) => {
     setEditingId(s.saleId);
+    setEditingSaleDate(s.saleDate);
     setCustomerId(s.customerId ? String(s.customerId) : '');
     setPaidAmount(s.paidAmount);
     setItems(s.details && s.details.length > 0 ? s.details.map(d => ({
@@ -202,7 +268,28 @@ export default function Sales() {
           status: s.status
         })
       });
-      Swal.fire('Paid!', 'Payment collected successfully!', 'success');
+      markItemAsUpdated('sales', s.saleId);
+
+      // Automated WhatsApp notification for payment received
+      const waMsg = createSalesWhatsAppMessage({
+        saleId: s.saleId,
+        customerName: s.customerName,
+        totalAmount: s.totalAmount,
+        paidAmount: s.totalAmount,
+        balanceAmount: 0,
+        paymentStatus: 'PAID',
+        handledBy: 'Admin'
+      });
+      sendWhatsAppNotificationToPartners(apiRequest, {
+        message: waMsg,
+        eventType: 'SALES_PAYMENT',
+        referenceId: String(s.saleId),
+        category: 'SALES',
+        actionType: 'PAYMENT',
+        performedBy: 'Admin'
+      });
+
+      Swal.fire('Paid!', 'Payment collected successfully & WhatsApp notification dispatched!', 'success');
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
@@ -224,6 +311,26 @@ export default function Sales() {
   const getProductSizeStr = (productId) => {
     const prod = products.find(p => p.productId === productId);
     return prod ? prod.variantName : '';
+  };
+
+  const downloadCSV = async () => {
+    const rows = [
+      ['Date', 'Invoice No', 'Customer', 'Items Count', 'Total Amount', 'Paid Amount', 'Adjustment', 'Due Amount', 'Payment Status'],
+      ...filteredSales.map(s => [
+        formatDateDDMMYYYY(s.saleDate || s.invoiceDate),
+        s.invoiceNumber || '-',
+        s.customerName || 'Unknown',
+        s.items?.length || 0,
+        s.totalAmount || 0,
+        s.paidAmount || 0,
+        s.adjustment || 0,
+        s.dueAmount || 0,
+        s.paymentStatus || 'UNKNOWN'
+      ])
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const filename = `Sales_Report_${new Date().getTime()}.csv`;
+    await downloadCsvCrossPlatform(csv, filename);
   };
 
   return (
@@ -254,7 +361,7 @@ export default function Sales() {
         <div className="grid grid-cols-4 gap-2 border border-slate-300 rounded-lg p-1.5 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[10px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[10px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Total Invoices</span>
@@ -274,26 +381,37 @@ export default function Sales() {
       {/* =========================================================
           DESKTOP HEADER
       ========================================================= */}
-      <section className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 print:hidden">
-        <div>
+      <section className="flex flex-row justify-between items-center gap-2 print:hidden">
+        <div className="min-w-0">
           <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
             <span>Sales</span>
-            <ChevronRight size={10} />
-            <span className="text-slate-400">Ledger</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Ledger</span>
           </div>
-          <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 tracking-tight leading-none">
+          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
             Invoice Management
           </h1>
         </div>
           
         <div className="flex gap-2 shrink-0">
-          <button
-            onClick={() => window.print()}
-            className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-3 py-2 text-xs font-bold transition shadow-sm"
-          >
-            <FileText size={14} className="text-slate-400" />
-            <span>Print Report</span>
-          </button>
+          
+            <button
+              onClick={downloadCSV}
+              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+            >
+              <Download size={14} className="text-slate-400" />
+              <span className="hidden xs:inline">Download CSV</span>
+            </button>
+          
+          
+            <button
+              onClick={handlePrint}
+              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+            >
+              <FileText size={14} className="text-slate-400" />
+              <span className="hidden xs:inline">Print Report</span>
+            </button>
+          
           <button 
             onClick={() => {
               setEditingId(null);
@@ -316,7 +434,13 @@ export default function Sales() {
       ===================================================== */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
         {/* Total Invoices */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All invoices"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-blue-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
@@ -328,7 +452,13 @@ export default function Sales() {
         </div>
 
         {/* Total Sales */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All sales"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-emerald-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
@@ -340,7 +470,13 @@ export default function Sales() {
         </div>
 
         {/* Collected */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter(balanceFilter === 'paid' ? 'all' : 'paid')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Paid invoices"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-indigo-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-100 text-indigo-600">
@@ -352,7 +488,13 @@ export default function Sales() {
         </div>
 
         {/* Outstanding */}
-        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-2.5 sm:p-4 shadow-sm border border-rose-400 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter(balanceFilter === 'due' ? 'all' : 'due')}
+          role="button"
+          tabIndex={0}
+          className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-2.5 sm:p-4 shadow-sm border border-rose-400 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Pending/Due invoices"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-white/10 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
@@ -367,50 +509,82 @@ export default function Sales() {
       {/* =====================================================
           FILTER BAR
       ===================================================== */}
-      <section className="bg-[#fff7f9] rounded-2xl p-2 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden">
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden items-stretch lg:items-center justify-between">
         {/* Search */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search invoices, customers..."
-            className="h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
           />
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Date Picker Range Inputs */}
-          <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-9 w-full sm:w-auto">
-            <CalendarDays size={13} className="text-slate-400 hidden sm:block" />
-            <input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-none flex-1 min-w-[110px] sm:w-[125px] sm:flex-none pl-1"
-            />
-            <span className="text-slate-300 text-[10px] shrink-0">-</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-none flex-1 min-w-[110px] sm:w-[125px] sm:flex-none pl-1"
-            />
+        <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            {/* Period Preset Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={datePreset}
+                onChange={e => {
+                  const val = e.target.value;
+                  setDatePreset(val);
+                  if (val !== 'custom') {
+                    const range = getPresetDateRange(val);
+                    setFromDate(range.fromDate);
+                    setToDate(range.toDate);
+                  }
+                }}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-bold text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[120px] cursor-pointer"
+              >
+                <option value="thisMonth">This Month</option>
+                <option value="today">Today</option>
+                <option value="lastMonth">Last Month</option>
+                <option value="quarter">This Quarter</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+
+            {/* Status Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={balanceFilter}
+                onChange={e => setBalanceFilter(e.target.value)}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[110px] cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="paid">Paid Only</option>
+                <option value="due">Outstanding Due</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
-          {/* Status Dropdown */}
-          <div className="relative w-full sm:w-auto">
-            <select
-              value={balanceFilter}
-              onChange={e => setBalanceFilter(e.target.value)}
-              className="h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[110px]"
-            >
-              <option value="all">All Statuses</option>
-              <option value="paid">Paid Only</option>
-              <option value="due">Outstanding Due</option>
-            </select>
-            <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          {/* Date Picker Range Inputs */}
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-10 sm:h-9 w-full sm:w-auto">
+            <CalendarDays size={13} className="text-slate-400 hidden sm:block shrink-0" />
+            <DateInput 
+              value={fromDate}
+              onChange={e => {
+                setFromDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
+            <span className="text-slate-300 text-[10px] shrink-0">-</span>
+            <DateInput 
+              value={toDate}
+              onChange={e => {
+                setToDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
           </div>
         </div>
       </section>
@@ -437,7 +611,10 @@ export default function Sales() {
             <tbody className="divide-y divide-slate-100">
               {filteredSales.map((s) => (
                 <tr key={s.saleId} className="hover:bg-slate-50/80 transition-colors group">
-                  <td className="px-3 py-2 font-mono text-[11px] text-slate-500 group-hover:text-brand-accent transition-colors whitespace-nowrap">INV-{s.saleId}</td>
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className="font-mono text-[11px] text-slate-500 group-hover:text-brand-accent transition-colors block">INV-{s.saleId}</span>
+                    <span className="text-[10px] text-slate-400 font-medium block">{formatDateDDMMYYYY(s.saleDate)}</span>
+                  </td>
                   <td className="px-3 py-2 font-bold text-slate-900 truncate">{s.customerName}</td>
                   <td className="px-3 py-2">
                     <div className="flex flex-wrap gap-1">
@@ -542,7 +719,7 @@ export default function Sales() {
                   <p className="font-black text-sm text-white leading-tight mb-1">{invoice.customerName}</p>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[9px] font-bold text-blue-200 bg-white/10 border border-white/10 px-2 py-0.5 rounded-md backdrop-blur-md">INV-{invoice.saleId}</span>
-                    <span className="text-[10px] text-slate-300 font-medium">{new Date(invoice.saleDate).toLocaleDateString()}</span>
+                    <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(invoice.saleDate)}</span>
                   </div>
                 </div>
                 <span className={`relative z-10 shrink-0 inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${
@@ -664,15 +841,13 @@ export default function Sales() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Customer</label>
-                <select
+                <SearchableCustomerSelect
+                  customers={customers}
                   value={customerId}
-                  onChange={(e) => setCustomerId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold focus:outline-none transition-all"
+                  onChange={(cId) => setCustomerId(cId)}
+                  placeholder="Search customer name or phone..."
                   required
-                >
-                  <option value="">Select Customer</option>
-                  {customers.map(c => <option key={c.customerId} value={c.customerId}>{c.customerName}</option>)}
-                </select>
+                />
               </div>
 
               <div className="space-y-3 pt-2">
@@ -826,72 +1001,109 @@ export default function Sales() {
         </div>
       )}
 
-      {/* Details View Modal */}
+      {/* =========================================================
+          VIEW INVOICE VOUCHER MODAL
+      ========================================================= */}
       {selectedSale && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-[#ffeef1] border border-pink-200/80 max-w-md w-full rounded-2xl p-5 space-y-4 shadow-2xl relative">
-            <button
-              onClick={() => setSelectedSale(null)}
-              className="absolute top-5 right-5 text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
-            >
-              ✕
-            </button>
-            <h3 className="text-lg font-black text-slate-900 tracking-tight mb-2">Invoice: INV-{selectedSale.saleId}</h3>
-            
-            <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-4">
-              <div>
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest">Customer</p>
-                <p className="text-slate-900 font-black text-sm mt-1">{selectedSale.customerName}</p>
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-xl max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between border-b border-pink-200/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black">
+                  <FileText size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Sales Invoice Voucher</h3>
+                  <span className="text-[10px] font-mono text-slate-500">INV-{selectedSale.saleId}</span>
+                </div>
               </div>
-              <div>
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest">Date</p>
-                <p className="text-slate-900 font-bold mt-1">{new Date(selectedSale.saleDate).toLocaleDateString()}</p>
+              <button
+                onClick={() => setSelectedSale(null)}
+                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-[#fff7f9] p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Customer:</span>
+                <span className="font-black text-slate-900">{selectedSale.customerName}</span>
               </div>
-              <div>
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest">Status</p>
-                <p className={`mt-1 font-black ${selectedSale.paymentStatus === 'PAID' ? 'text-emerald-500' : 'text-rose-500'}`}>{selectedSale.paymentStatus}</p>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Invoice Date:</span>
+                <span className="font-mono text-slate-800">{formatDateDDMMYYYY(selectedSale.saleDate)}</span>
               </div>
-              <div>
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest">Due Amount</p>
-                <p className="text-slate-900 font-black mt-1">₹{selectedSale.balanceAmount?.toLocaleString()}</p>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Payment Status:</span>
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${
+                  selectedSale.paymentStatus === 'PAID' 
+                    ? 'bg-emerald-100 text-emerald-700' 
+                    : selectedSale.paidAmount > 0 
+                      ? 'bg-amber-100 text-amber-700' 
+                      : 'bg-rose-100 text-rose-700'
+                }`}>
+                  {selectedSale.paymentStatus}
+                </span>
               </div>
             </div>
 
-            <div className="space-y-3">
-              <h4 className="text-[10px] uppercase font-bold tracking-widest text-slate-500">Purchased Items</h4>
-              <div className="max-h-48 overflow-y-auto space-y-2.5">
-                {selectedSale.details?.map((d, i) => {
-                  const prod = products.find(p => p.productId === d.productId);
-                  const batch = batches.find(b => b.batchId === d.batchId);
-                  return (
-                    <div key={i} className="bg-slate-50 border border-slate-100 p-3 rounded-xl flex justify-between items-center text-xs">
-                      <div>
-                        <p className="text-slate-900 font-bold">{prod ? `${prod.productName} (${prod.variantName})` : `Product #${d.productId}`}</p>
-                        {batch && (
-                          <p className="text-slate-500 font-mono mt-1 text-[9px]">
-                            Batch: {batch.batchNumber} ({batch.supplierName})
-                          </p>
-                        )}
-                      </div>
-                      <div className="text-right">
-                        <p className="text-slate-900 font-black">{d.quantity} <span className="text-slate-400 font-medium">x</span> ₹{d.unitPrice?.toFixed(2)}</p>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Items Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-2 text-[10px] uppercase font-bold">Product & Batch</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Qty</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Price</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedSale.details?.map((d, i) => {
+                    const prod = products.find(p => p.productId === d.productId);
+                    const batch = batches.find(b => b.batchId === d.batchId);
+                    return (
+                      <tr key={i}>
+                        <td className="p-2">
+                          <p className="font-bold text-slate-800">{prod ? `${prod.productName} (${prod.variantName})` : `Product #${d.productId}`}</p>
+                          {batch && (
+                            <p className="text-[9px] font-mono text-slate-400">
+                              Batch: {batch.batchNumber} ({batch.supplierName})
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{d.quantity}</td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{money(d.unitPrice)}</td>
+                        <td className="p-2 text-right font-mono font-black text-slate-900">{money(d.quantity * d.unitPrice)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-100 font-black text-xs divide-y divide-slate-200">
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Total Invoice Amount</td>
+                    <td className="p-2 text-right font-mono text-slate-900">{money(selectedSale.totalAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Paid Amount</td>
+                    <td className="p-2 text-right font-mono text-emerald-700">{money(selectedSale.paidAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Balance Due</td>
+                    <td className={`p-2 text-right font-mono ${selectedSale.balanceAmount > 0 ? "text-rose-600" : "text-slate-900"}`}>
+                      {money(selectedSale.balanceAmount)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
 
-            <div className="border-t border-slate-100 pt-4 flex justify-between items-center text-xs font-bold text-slate-500">
-              <span className="uppercase tracking-widest">Total Invoice Amount:</span>
-              <span className="text-slate-900 font-black text-xl">₹{selectedSale.totalAmount?.toLocaleString()}</span>
-            </div>
-            
             <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setSelectedSale(null)}
-                className="px-6 py-2 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 rounded-xl font-bold text-xs transition-colors"
+                className="px-6 py-2 bg-[#fff7f9] text-slate-700 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-bold text-xs border border-slate-200 transition-colors shadow-sm"
               >
                 Close
               </button>

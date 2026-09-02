@@ -1,10 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { 
-  Plus, Edit2, Trash2, Search, ChevronRight, FileText, 
+  Plus, Edit2, Trash2, Search, ChevronRight, ChevronDown, FileText, 
   CircleDollarSign, Layers, Package, Eye, Pencil
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortProductsBySizeAndRecency, sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
+import { sendWhatsAppNotificationToPartners, createProductWhatsAppMessage } from '../utils/whatsappHelper';
 
 export default function Product() {
   const { apiRequest } = useAuth();
@@ -17,12 +21,38 @@ export default function Product() {
   const [editingId, setEditingId] = useState(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [search, setSearch] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
 
   const loadData = () => {
-    apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
-    apiRequest('/category').then(res => setCategories(res.data)).catch(console.error);
-    apiRequest('/variant').then(res => setVariants(res.data)).catch(console.error);
-    apiRequest('/unit').then(res => setUnits(res.data)).catch(console.error);
+    apiRequest('/product').then(res => setProducts(sortProductsBySizeAndRecency(res.data, 'product'))).catch(console.error);
+    
+    apiRequest('/category').then(res => {
+      const cats = Array.isArray(res.data) ? res.data : [];
+      // Sort categories: Domestic first, Export second, then others
+      const sortedCats = [...cats].sort((a, b) => {
+        const aName = (a.categoryName || a.name || '').toLowerCase();
+        const bName = (b.categoryName || b.name || '').toLowerCase();
+        const aDom = aName.includes('domestic') ? 1 : 0;
+        const bDom = bName.includes('domestic') ? 1 : 0;
+        if (aDom !== bDom) return bDom - aDom;
+        const aExp = aName.includes('export') ? 1 : 0;
+        const bExp = bName.includes('export') ? 1 : 0;
+        if (aExp !== bExp) return bExp - aExp;
+        return (b.categoryId || b.id || 0) - (a.categoryId || a.id || 0);
+      });
+      setCategories(sortedCats);
+
+      // Default to Domestic Plates category on initial load
+      const domesticCat = sortedCats.find(c => (c.categoryName || c.name || '').toLowerCase().includes('domestic'));
+      if (domesticCat) {
+        setSelectedCategory(prev => (!prev || prev === 'all' ? String(domesticCat.categoryId || domesticCat.id) : prev));
+      } else if (sortedCats.length > 0) {
+        setSelectedCategory(prev => (!prev ? String(sortedCats[0].categoryId || sortedCats[0].id) : prev));
+      }
+    }).catch(console.error);
+
+    apiRequest('/variant').then(res => setVariants(sortLatestFirst(res.data, ['variantId', 'id'], 'variant'))).catch(console.error);
+    apiRequest('/unit').then(res => setUnits(sortLatestFirst(res.data, ['unitId', 'id'], 'unit'))).catch(console.error);
   };
 
   useEffect(() => {
@@ -45,13 +75,32 @@ export default function Product() {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
+        markItemAsUpdated('product', editingId);
         Swal.fire('Success', 'Product updated!', 'success');
       } else {
         await apiRequest('/product', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        Swal.fire('Success', 'Product created!', 'success');
+
+        const cat = categories.find(c => String(c.categoryId) === String(form.catId));
+        const vr = variants.find(v => String(v.variantId) === String(form.varId));
+        const waMsg = createProductWhatsAppMessage({
+          productName: form.name,
+          categoryName: cat?.categoryName || 'Domestic Plates',
+          variantName: vr?.variantName || 'Standard',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'PRODUCT_CREATE',
+          referenceId: form.name,
+          category: 'PRODUCT',
+          actionType: 'CREATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Product created & Partners alerted via WhatsApp!', 'success');
       }
       setForm({ name: '', catId: '', varId: '', unitId: '', alert: 1000 });
       setEditingId(null);
@@ -94,15 +143,22 @@ export default function Product() {
     }
   };
 
-  const filteredProducts = products.filter(p => {
-    const term = search.toLowerCase();
-    return (
-      p.productName?.toLowerCase().includes(term) ||
-      p.productCode?.toLowerCase().includes(term) ||
-      p.categoryName?.toLowerCase().includes(term) ||
-      p.variantName?.toLowerCase().includes(term)
-    );
-  });
+  // Products filtered by selected category and ordered by plate size (12" -> 10" -> 8" -> ...)
+  const filteredProducts = sortProductsBySizeAndRecency(
+    products.filter(p => {
+      if (selectedCategory && selectedCategory !== 'all' && String(p.categoryId) !== String(selectedCategory)) {
+        return false;
+      }
+      const term = search.toLowerCase();
+      return (
+        p.productName?.toLowerCase().includes(term) ||
+        p.productCode?.toLowerCase().includes(term) ||
+        p.categoryName?.toLowerCase().includes(term) ||
+        p.variantName?.toLowerCase().includes(term)
+      );
+    }),
+    'product'
+  );
 
   return (
     <div className="space-y-4">
@@ -132,7 +188,7 @@ export default function Product() {
         <div className="grid grid-cols-2 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Catalog Products</span>
@@ -145,18 +201,18 @@ export default function Product() {
           HEADER
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Products & Stock</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-brand-accent">Products Master</span>
-        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Products & Stock</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Products Master</span>
+          </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             Products Catalog
           </h1>
           <div className="flex gap-2 shrink-0">
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
@@ -180,16 +236,32 @@ export default function Product() {
       {/* =====================================================
           FILTER BAR
       ===================================================== */}
-      <section className="bg-[#fff7f9] rounded-2xl p-2 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden">
-        <div className="relative w-full lg:max-w-md">
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 shadow-sm border border-slate-100 flex flex-col sm:flex-row gap-2 print:hidden items-stretch sm:items-center justify-between">
+        <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search product code, name, variant or category..."
-            className="h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
           />
+        </div>
+
+        <div className="relative w-full sm:w-56 shrink-0">
+          <select
+            value={selectedCategory}
+            onChange={e => setSelectedCategory(e.target.value)}
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 px-3 pr-8 text-xs text-slate-800 font-bold focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all appearance-none cursor-pointer truncate"
+          >
+            <option value="all">All Categories</option>
+            {categories.map(c => (
+              <option key={c.categoryId || c.id} value={c.categoryId || c.id}>
+                {c.categoryName || c.name}
+              </option>
+            ))}
+          </select>
+          <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         </div>
       </section>
 

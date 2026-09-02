@@ -1,12 +1,20 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { Plus, Sliders, Edit2, Trash2, Search, ArrowLeft, ArrowRight, Download, ChevronRight, FileText, Package, Pencil } from 'lucide-react';
+import { Plus, Sliders, Edit2, Trash2, Search, ArrowLeft, ArrowRight, Download, CalendarDays, PackageCheck, AlertCircle, TrendingUp, CheckCircle, Truck, FileText, Package, Pencil, ChevronRight, ChevronDown } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { downloadCsvCrossPlatform } from '../utils/exportCsv';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated, sortBatchesBySizeAndRecency } from '../utils/sortHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
+import { sendWhatsAppNotificationToPartners, createStockAdjustWhatsAppMessage, createNewBatchWhatsAppMessage } from '../utils/whatsappHelper';
+import DateInput from '../components/DateInput';
 
 export default function Batch() {
   const { apiRequest } = useAuth();
   const [batches, setBatches] = useState([]);
   const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
   const [locations, setLocations] = useState([]);
   const [editingId, setEditingId] = useState(null);
 
@@ -15,6 +23,7 @@ export default function Batch() {
 
   // Pagination & Filters State
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('');
   const [currentPage, setCurrentPage] = useState(1);
   const [stockFilter, setStockFilter] = useState('instock');
 
@@ -49,8 +58,33 @@ export default function Batch() {
   const [showAdjustModal, setShowAdjustModal] = useState(false);
 
   const loadData = () => {
-    apiRequest('/batch').then(res => setBatches(res.data || [])).catch(console.error);
-    apiRequest('/product').then(res => setProducts(res.data || [])).catch(console.error);
+    apiRequest('/batch').then(res => setBatches(sortBatchesBySizeAndRecency(res.data || [], 'batch'))).catch(console.error);
+    apiRequest('/product').then(res => setProducts(sortLatestFirst(res.data || [], ['productId', 'id'], 'product'))).catch(console.error);
+    
+    apiRequest('/category').then(res => {
+      const cats = Array.isArray(res.data) ? res.data : [];
+      const sortedCats = [...cats].sort((a, b) => {
+        const aName = (a.categoryName || a.name || '').toLowerCase();
+        const bName = (b.categoryName || b.name || '').toLowerCase();
+        const aDom = aName.includes('domestic') ? 1 : 0;
+        const bDom = bName.includes('domestic') ? 1 : 0;
+        if (aDom !== bDom) return bDom - aDom;
+        const aExp = aName.includes('export') ? 1 : 0;
+        const bExp = bName.includes('export') ? 1 : 0;
+        if (aExp !== bExp) return bExp - aExp;
+        return (b.categoryId || b.id || 0) - (a.categoryId || a.id || 0);
+      });
+      setCategories(sortedCats);
+
+      // Default to Domestic Plates category on initial load (not all categories)
+      const domesticCat = sortedCats.find(c => (c.categoryName || c.name || '').toLowerCase().includes('domestic'));
+      if (domesticCat) {
+        setSelectedCategory(prev => (!prev || prev === 'all' ? String(domesticCat.categoryId || domesticCat.id) : prev));
+      } else if (sortedCats.length > 0) {
+        setSelectedCategory(prev => (!prev ? String(sortedCats[0].categoryId || sortedCats[0].id) : prev));
+      }
+    }).catch(console.error);
+
     apiRequest('/location')
       .catch(() => apiRequest('/location/get-all-locations'))
       .then(res => {
@@ -98,6 +132,7 @@ export default function Batch() {
           method: 'PUT',
           body: JSON.stringify(payload)
         });
+        markItemAsUpdated('batch', editingId);
         Swal.fire('Success', 'Batch updated successfully!', 'success');
       } else {
         // Create multiple batches sharing same batch number
@@ -121,7 +156,29 @@ export default function Batch() {
             body: JSON.stringify(payload)
           });
         }
-        Swal.fire('Success', 'Stock batches created successfully!', 'success');
+        
+        // Automated WhatsApp Notification for new stock batches
+        form.items.forEach(item => {
+          const prod = products.find(p => String(p.productId) === String(item.productId));
+          const prodName = prod?.productName || 'Plate Batch';
+          const waMsg = createNewBatchWhatsAppMessage({
+            batchNumber: form.batchNumber,
+            productName: prodName,
+            quantity: item.initialQuantity,
+            unitCost: item.unitCost,
+            handledBy: 'Admin'
+          });
+          sendWhatsAppNotificationToPartners(apiRequest, {
+            message: waMsg,
+            eventType: 'STOCK_CREATE',
+            referenceId: form.batchNumber,
+            category: 'STOCK',
+            actionType: 'CREATE',
+            performedBy: 'Admin'
+          });
+        });
+
+        Swal.fire('Success', 'Stock batches created & Partners notified via WhatsApp!', 'success');
       }
       setForm({
         batchNumber: '',
@@ -185,7 +242,28 @@ export default function Batch() {
           description: adjustForm.description
         })
       });
-      Swal.fire('Success', 'Stock adjusted successfully!', 'success');
+      markItemAsUpdated('batch', adjustForm.batchId);
+
+      // Automated WhatsApp notification for stock adjustment
+      const currentBatch = batches.find(b => String(b.batchId) === String(adjustForm.batchId));
+      const waMsg = createStockAdjustWhatsAppMessage({
+        batchNumber: currentBatch?.batchNumber || `Batch #${adjustForm.batchId}`,
+        productName: currentBatch?.productName || 'Plate Item',
+        oldQuantity: currentBatch?.currentQuantity || 0,
+        newQuantity: adjustForm.newQuantity,
+        reason: adjustForm.description,
+        handledBy: 'Admin'
+      });
+      sendWhatsAppNotificationToPartners(apiRequest, {
+        message: waMsg,
+        eventType: 'STOCK_ADJUST',
+        referenceId: String(adjustForm.batchId),
+        category: 'STOCK',
+        actionType: 'ADJUST',
+        performedBy: 'Admin'
+      });
+
+      Swal.fire('Success', 'Stock adjusted & Partners notified via WhatsApp!', 'success');
       setShowAdjustModal(false);
       setAdjustForm({ batchId: '', newQuantity: '', description: '' });
       loadData();
@@ -194,30 +272,61 @@ export default function Batch() {
     }
   };
 
-  const filteredBatches = [...batches]
-    .sort((a, b) => {
-      const aActive = a.currentQuantity > 0 ? 1 : 0;
-      const bActive = b.currentQuantity > 0 ? 1 : 0;
-      if (aActive !== bActive) return bActive - aActive; 
-      return new Date(b.receivedDate) - new Date(a.receivedDate); 
-    })
-    .filter(b => {
+  const filteredBatches = sortBatchesBySizeAndRecency(
+    batches.filter(b => {
       if (stockFilter === 'instock' && b.currentQuantity <= 0) return false;
       if (stockFilter === 'outofstock' && b.currentQuantity > 0) return false;
       
+      if (selectedCategory && selectedCategory !== 'all') {
+        const prod = products.find(p => p.productId === b.productId);
+        const batchCatId = b.categoryId || prod?.categoryId;
+        const batchCatName = b.categoryName || prod?.categoryName;
+        const targetCat = categories.find(c => String(c.categoryId || c.id) === String(selectedCategory));
+        const targetCatName = targetCat?.categoryName || targetCat?.name;
+        
+        const matchesCatId = batchCatId && String(batchCatId) === String(selectedCategory);
+        const matchesCatName = targetCatName && batchCatName && batchCatName.toLowerCase() === targetCatName.toLowerCase();
+        
+        if (!matchesCatId && !matchesCatName) {
+          return false;
+        }
+      }
+
       const term = searchTerm.toLowerCase();
       return (
         (b.batchNumber && b.batchNumber.toLowerCase().includes(term)) ||
         (b.productName && b.productName.toLowerCase().includes(term)) ||
         (b.supplierName && b.supplierName.toLowerCase().includes(term))
       );
-    });
+    }),
+    ['batchId', 'id'],
+    'batch'
+  );
 
   const totalPages = Math.ceil(filteredBatches.length / 10) || 1;
   const paginatedBatches = filteredBatches.slice((currentPage - 1) * 10, currentPage * 10);
 
   const handlePrintPDF = () => {
-    window.print();
+    handlePrint();
+  };
+
+  const downloadCSV = async () => {
+    const rows = [
+      ['Date', 'Batch No', 'Product', 'Supplier', 'Initial Qty', 'Current Qty', 'Unit Cost', 'Status'],
+      ...filteredBatches.map(b => [
+        formatDateDDMMYYYY(b.receivedDate),
+        b.batchNumber || '-',
+        b.productName || 'Unknown',
+        b.supplierName || 'Unknown',
+        b.initialQuantity || 0,
+        b.currentQuantity || 0,
+        b.unitCost || 0,
+        b.status || 'UNKNOWN'
+      ])
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const filename = `Batch_Report_${new Date().getTime()}.csv`;
+    await downloadCsvCrossPlatform(csv, filename);
   };
 
   return (
@@ -248,7 +357,7 @@ export default function Batch() {
         <div className="grid grid-cols-4 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Batches</span>
@@ -268,25 +377,37 @@ export default function Batch() {
       {/* =========================================================
           HEADER
       ========================================================= */}
-      <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Products & Stock</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-brand-accent">Stock Batches</span>
-        </div>
-        <div className="flex justify-between items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
+      <section className="flex flex-row justify-between items-center gap-2 print:hidden">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Products & Stock</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Stock Batches</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
             Inventory Ledger
           </h1>
-          <div className="flex gap-2 shrink-0">
+        </div>
+        <div className="flex gap-2 shrink-0">
+          
+            <button
+              onClick={downloadCSV}
+              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <Download size={14} className="text-slate-400" />
+              <span className="hidden xs:inline">Download CSV</span>
+            </button>
+          
+          
             <button
               onClick={handlePrintPDF}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden sm:inline">Print Report</span>
+              <span className="hidden xs:inline">Print Report</span>
             </button>
-            <button 
+          
+          <button 
               onClick={() => {
                 setEditingId(null);
                 setForm({
@@ -304,14 +425,13 @@ export default function Batch() {
               New Batch
             </button>
           </div>
-        </div>
       </section>
 
       {/* =====================================================
           FILTER BAR
       ===================================================== */}
-      <section className="bg-[#fff7f9] rounded-2xl p-2 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden">
-        <div className="relative w-full lg:max-w-md">
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden items-stretch lg:items-center justify-between">
+        <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
@@ -320,22 +440,49 @@ export default function Batch() {
               setSearchTerm(e.target.value);
               setCurrentPage(1);
             }}
-            placeholder="Search batch number, supplier name..."
-            className="h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
+            placeholder="Search batch number, product name, supplier..."
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
           />
         </div>
-        <select
-          value={stockFilter}
-          onChange={(e) => {
-            setStockFilter(e.target.value);
-            setCurrentPage(1);
-          }}
-          className="h-9 w-full lg:w-48 rounded-xl bg-slate-50 border border-slate-100 px-3 text-xs text-slate-800 font-medium focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all cursor-pointer"
-        >
-          <option value="all">All Batches</option>
-          <option value="instock">In Stock Only</option>
-          <option value="outofstock">Out of Stock Only</option>
-        </select>
+
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:flex lg:flex-row gap-2 w-full lg:w-auto">
+          {/* Category Dropdown Filter - Default to Domestic Plates */}
+          <div className="relative w-full lg:w-56">
+            <select
+              value={selectedCategory}
+              onChange={(e) => {
+                setSelectedCategory(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 px-3 pr-8 text-xs text-slate-800 font-bold focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all appearance-none cursor-pointer truncate"
+            >
+              <option value="all">All Categories</option>
+              {categories.map(c => (
+                <option key={c.categoryId || c.id} value={c.categoryId || c.id}>
+                  {c.categoryName || c.name}
+                </option>
+              ))}
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+
+          {/* Stock Filter Dropdown */}
+          <div className="relative w-full lg:w-44">
+            <select
+              value={stockFilter}
+              onChange={(e) => {
+                setStockFilter(e.target.value);
+                setCurrentPage(1);
+              }}
+              className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 px-3 pr-8 text-xs text-slate-800 font-medium focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all appearance-none cursor-pointer"
+            >
+              <option value="all">All Batches</option>
+              <option value="instock">In Stock Only</option>
+              <option value="outofstock">Out of Stock Only</option>
+            </select>
+            <ChevronDown size={14} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          </div>
+        </div>
       </section>
 
       {/* =====================================================
@@ -363,7 +510,10 @@ export default function Batch() {
               ) : (
                 paginatedBatches.map((b) => (
                   <tr key={b.batchId} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="px-5 py-3 font-mono font-bold text-[10px] text-slate-500">{b.batchNumber}</td>
+                    <td className="px-5 py-3">
+                      <span className="font-mono font-bold text-[10px] text-slate-500 block">{b.batchNumber}</span>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{formatDateDDMMYYYY(b.receivedDate)}</span>
+                    </td>
                     <td className="px-5 py-3 font-bold text-slate-800 text-xs">{b.productName}</td>
                     <td className="px-5 py-3 text-right text-xs text-slate-600 font-mono">₹{b.landedUnitCost?.toFixed(2)}</td>
                     <td className="px-5 py-3 text-right">
@@ -480,6 +630,8 @@ export default function Batch() {
                       </h3>
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-blue-200 font-mono tracking-wider">{b.batchNumber}</span>
+                        <span className="w-1 h-1 rounded-full bg-slate-400"></span>
+                        <span className="text-[10px] font-medium text-slate-300">{formatDateDDMMYYYY(b.receivedDate)}</span>
                       </div>
                     </div>
                   </div>
@@ -678,11 +830,11 @@ export default function Batch() {
 
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Received Date</label>
-                <input
-                  type="date"
+                <DateInput
                   value={form.receivedDate}
                   onChange={(e) => setForm({ ...form, receivedDate: e.target.value })}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                  className="w-full bg-slate-50 border border-slate-200 focus-within:border-brand-accent focus-within:ring-2 focus-within:ring-brand-accent/20 rounded-xl px-4 py-2.5 transition-all h-11"
+                  textClassName="text-sm font-bold text-slate-900"
                   required
                 />
               </div>

@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { Plus } from 'lucide-react';
+import { sortLatestFirst, sortProductsBySizeAndRecency, sortBatchesBySizeAndRecency } from '../utils/sortHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function Stock() {
   const { apiRequest } = useAuth();
@@ -15,11 +17,11 @@ export default function Stock() {
   const [catForm, setCatForm] = useState({ name: '' });
 
   const loadData = () => {
-    apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
-    apiRequest('/batch').then(res => setBatches(res.data)).catch(console.error);
-    apiRequest('/category').then(res => setCategories(res.data)).catch(console.error);
-    apiRequest('/variant').then(res => setVariants(res.data)).catch(console.error);
-    apiRequest('/unit').then(res => setUnits(res.data)).catch(console.error);
+    apiRequest('/product').then(res => setProducts(sortProductsBySizeAndRecency(res.data, 'product'))).catch(console.error);
+    apiRequest('/batch').then(res => setBatches(sortBatchesBySizeAndRecency(res.data, 'batch'))).catch(console.error);
+    apiRequest('/category').then(res => setCategories(sortLatestFirst(res.data, ['categoryId', 'id'], 'category'))).catch(console.error);
+    apiRequest('/variant').then(res => setVariants(sortLatestFirst(res.data, ['variantId', 'id'], 'variant'))).catch(console.error);
+    apiRequest('/unit').then(res => setUnits(sortLatestFirst(res.data, ['unitId', 'id'], 'unit'))).catch(console.error);
   };
 
   useEffect(() => {
@@ -89,7 +91,7 @@ export default function Stock() {
         <div className="grid grid-cols-3 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Products Configured</span>

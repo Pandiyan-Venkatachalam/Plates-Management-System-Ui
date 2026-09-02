@@ -2,6 +2,9 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { UserPlus, Shield, Search, ChevronRight, Plus, User } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function UsersAndRoles() {
   const { apiRequest } = useAuth();
@@ -23,7 +26,7 @@ export default function UsersAndRoles() {
   });
 
   const loadData = () => {
-    apiRequest('/auth/users').then(res => setUsers(res.data)).catch(console.error);
+    apiRequest('/auth/users').then(res => setUsers(sortLatestFirst(res.data, ['userId', 'id'], 'user'))).catch(console.error);
     apiRequest('/role').then(res => setRoles(res)).catch(console.error);
   };
 
@@ -54,9 +57,13 @@ export default function UsersAndRoles() {
     }
   };
 
-  const filteredUsers = users.filter(u => 
-    u.fullName?.toLowerCase().includes(search.toLowerCase()) ||
-    u.username?.toLowerCase().includes(search.toLowerCase())
+  const filteredUsers = sortLatestFirst(
+    users.filter(u => 
+      u.fullName?.toLowerCase().includes(search.toLowerCase()) ||
+      u.username?.toLowerCase().includes(search.toLowerCase())
+    ),
+    ['userId', 'id'],
+    'user'
   );
 
   return (
@@ -87,7 +94,7 @@ export default function UsersAndRoles() {
         <div className="grid grid-cols-2 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Configured Users</span>
@@ -100,18 +107,18 @@ export default function UsersAndRoles() {
           HEADER
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Settings</span>
-          <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="text-slate-400"><path d="m9 18 6-6-6-6"/></svg>
-          <span className="text-brand-accent">Staff & Roles</span>
-        </div>
+        <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Settings</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Staff & Roles</span>
+          </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             Staff & Role Configuration
           </h1>
           <div className="flex gap-2 shrink-0">
             <button
-              onClick={() => window.print()}
+              onClick={handlePrint}
               className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>

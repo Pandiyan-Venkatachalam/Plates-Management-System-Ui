@@ -3,9 +3,16 @@ import { useAuth } from '../context/AuthContext';
 import { 
   Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown, 
   ChevronRight, FileText, CircleDollarSign, WalletCards, 
-  TrendingUp, Eye, Pencil, CheckCircle
+  TrendingUp, Eye, Pencil, CheckCircle, Download, X
 } from 'lucide-react';
 import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { downloadCsvCrossPlatform } from '../utils/exportCsv';
+import { Capacitor } from '@capacitor/core';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
+import { sendWhatsAppNotificationToPartners, createPurchaseWhatsAppMessage } from '../utils/whatsappHelper';
+import DateInput from '../components/DateInput';
 
 export default function Purchase() {
   const { apiRequest } = useAuth();
@@ -18,10 +25,12 @@ export default function Purchase() {
   // Modal / Form toggle state
   const [showCreateForm, setShowCreateForm] = useState(false);
 
-  // Filter State
+  // Filter State - Default to Current Month (Auto-resets on 1st of every month)
+  const initialDates = getCurrentMonthRange();
   const [search, setSearch] = useState('');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  const [fromDate, setFromDate] = useState(initialDates.fromDate);
+  const [toDate, setToDate] = useState(initialDates.toDate);
+  const [datePreset, setDatePreset] = useState('thisMonth');
   const [balanceFilter, setBalanceFilter] = useState('all');
 
   // Form State
@@ -30,17 +39,39 @@ export default function Purchase() {
   const [paidAmount, setPaidAmount] = useState(0);
   const [accountName, setAccountName] = useState('Cash');
   const [editingId, setEditingId] = useState(null);
+  const [editingPurchaseDate, setEditingPurchaseDate] = useState(null);
+
+  // Split payment & In-Hand Cash States
+  const [transactions, setTransactions] = useState([]);
+  const [isSplitPayment, setIsSplitPayment] = useState(false);
+  const [paymentContributions, setPaymentContributions] = useState([]);
 
   const loadData = () => {
-    apiRequest('/purchase').then(res => setPurchases(res.data)).catch(console.error);
-    apiRequest('/supplier').then(res => setSuppliers(res.data)).catch(console.error);
+    apiRequest('/purchase').then(res => setPurchases(sortLatestFirst(res.data, ['purchaseId', 'id'], 'purchase'))).catch(console.error);
+    apiRequest('/supplier').then(res => setSuppliers(sortLatestFirst(res.data, ['supplierId', 'id'], 'supplier'))).catch(console.error);
     apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
-    apiRequest('/account').then(res => setAccounts(res.data)).catch(console.error);
+    apiRequest('/account/transactions').then(res => setTransactions(Array.isArray(res.data) ? res.data : [])).catch(console.error);
+    apiRequest('/account').then(res => {
+      const accs = Array.isArray(res.data) ? res.data : [];
+      setAccounts(accs);
+      if (accs.length > 0) {
+        setAccountName(prev => accs.some(a => a.accountName === prev) ? prev : accs[0].accountName);
+      }
+    }).catch(console.error);
   };
 
   useEffect(() => {
     loadData();
   }, []);
+
+  const getAccountInHand = (accNameOrId) => {
+    const acc = accounts.find(a => a.accountName === accNameOrId || a.accountId === accNameOrId || String(a.accountId) === String(accNameOrId));
+    if (!acc) return 0;
+    const accTxs = transactions.filter(t => t.accountId === acc.accountId);
+    const credits = accTxs.filter(t => t.transactionType === 'CREDIT').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    const debits = accTxs.filter(t => t.transactionType === 'DEBIT').reduce((s, t) => s + (Number(t.amount) || 0), 0);
+    return credits - debits;
+  };
 
   const addItemRow = () => setItems([...items, { productId: '', quantity: 0, unitCost: 0 }]);
   const removeItemRow = (idx) => setItems(items.filter((_, i) => i !== idx));
@@ -48,28 +79,42 @@ export default function Purchase() {
     setItems(items.map((item, i) => i === idx ? { ...item, [field]: val } : item));
   };
 
+  const addContributionRow = () => {
+    const unusedAcc = accounts.find(a => !paymentContributions.some(c => c.accountName === a.accountName)) || accounts[0];
+    setPaymentContributions([...paymentContributions, { accountName: unusedAcc?.accountName || 'Cash', amount: 0 }]);
+  };
+  const removeContributionRow = (idx) => {
+    setPaymentContributions(paymentContributions.filter((_, i) => i !== idx));
+  };
+  const updateContribution = (idx, field, val) => {
+    setPaymentContributions(paymentContributions.map((c, i) => i === idx ? { ...c, [field]: val } : c));
+  };
+
   const totalCost = items.reduce((sum, item) => sum + (item.quantity * item.unitCost), 0);
 
-  // Filter Logic
-  const filteredPurchases = purchases.filter(p => {
-    const matchesSearch = !search ||
-      (p.supplierName && p.supplierName.toLowerCase().includes(search.toLowerCase())) ||
-      (p.purchaseId && `PUR-${p.purchaseId}`.toLowerCase().includes(search.toLowerCase()));
+  // Filter Logic (latest and recently updated first)
+  const filteredPurchases = sortLatestFirst(
+    purchases.filter(p => {
+      const matchesSearch = !search ||
+        (p.supplierName && p.supplierName.toLowerCase().includes(search.toLowerCase())) ||
+        (p.purchaseId && `PUR-${p.purchaseId}`.toLowerCase().includes(search.toLowerCase()));
 
-    const purchaseDate = new Date(p.purchaseDate).setHours(0, 0, 0, 0);
-    const matchesFrom = !fromDate || purchaseDate >= new Date(fromDate).setHours(0, 0, 0, 0);
-    const matchesTo = !toDate || purchaseDate <= new Date(toDate).setHours(0, 0, 0, 0);
+      // Date range filter using clean string comparison
+      const matchesDate = isDateInRange(p.purchaseDate, fromDate, toDate);
 
-    // Balance filters: 'all', 'paid' (balance == 0), 'due' (balance > 0)
-    let matchesBalance = true;
-    if (balanceFilter === 'paid') {
-      matchesBalance = (p.balanceAmount <= 0);
-    } else if (balanceFilter === 'due') {
-      matchesBalance = (p.balanceAmount > 0);
-    }
+      // Balance filters: 'all', 'paid' (balance == 0), 'due' (balance > 0)
+      let matchesBalance = true;
+      if (balanceFilter === 'paid') {
+        matchesBalance = (p.balanceAmount <= 0);
+      } else if (balanceFilter === 'due') {
+        matchesBalance = (p.balanceAmount > 0);
+      }
 
-    return matchesSearch && matchesFrom && matchesTo && matchesBalance;
-  });
+      return matchesSearch && matchesDate && matchesBalance;
+    }),
+    ['purchaseId', 'id'],
+    'purchase'
+  );
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -77,6 +122,36 @@ export default function Purchase() {
       Swal.fire('Warning', 'Please select a supplier', 'warning');
       return;
     }
+
+    const paidNum = parseFloat(paidAmount) || 0;
+
+    // Strict in-hand cash validation
+    if (paidNum > 0) {
+      if (isSplitPayment) {
+        const totalSplit = paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0);
+        if (Math.abs(totalSplit - paidNum) > 0.01) {
+          Swal.fire('Split Payment Mismatch', `The sum of partner contributions (₹${totalSplit.toLocaleString()}) must equal the paid amount (₹${paidNum.toLocaleString()}).`, 'warning');
+          return;
+        }
+        for (const c of paymentContributions) {
+          const cAmt = parseFloat(c.amount) || 0;
+          if (cAmt > 0) {
+            const avail = getAccountInHand(c.accountName);
+            if (cAmt > avail) {
+              Swal.fire('Insufficient Funds', `Insufficient Cash In-Hand in ${c.accountName}. Available: ₹${avail.toLocaleString()}, but trying to pay ₹${cAmt.toLocaleString()}. Please record partner investment first.`, 'error');
+              return;
+            }
+          }
+        }
+      } else {
+        const avail = getAccountInHand(accountName);
+        if (paidNum > avail) {
+          Swal.fire('Insufficient Funds', `Insufficient Cash In-Hand in ${accountName}. Available: ₹${avail.toLocaleString()}, but trying to pay ₹${paidNum.toLocaleString()}. Please record partner investment first.`, 'error');
+          return;
+        }
+      }
+    }
+
     const payload = {
       supplierId: parseInt(supplierId),
       purchaseDate: new Date().toISOString(),
@@ -86,17 +161,23 @@ export default function Purchase() {
         unitCost: parseFloat(i.unitCost)
       })),
       expenses: [],
-      paidAmount: parseFloat(paidAmount),
-      paymentMethodAccountName: accountName
+      paidAmount: paidNum,
+      paymentMethodAccountName: accountName,
+      paymentContributions: isSplitPayment 
+        ? paymentContributions.map(c => ({ accountName: c.accountName, amount: parseFloat(c.amount) || 0 }))
+        : (paidNum > 0 ? [{ accountName, amount: paidNum }] : [])
     };
     try {
+      const currentSup = suppliers.find(s => String(s.supplierId) === String(supplierId));
+      const supplierName = currentSup?.supplierName || 'Supplier';
+
       if (editingId) {
         await apiRequest(`/purchase/${editingId}`, {
           method: 'PUT',
           body: JSON.stringify({
             purchaseId: editingId,
             supplierId: parseInt(supplierId),
-            purchaseDate: new Date().toISOString(),
+            purchaseDate: editingPurchaseDate || new Date().toISOString(),
             details: items.map(i => ({
               productId: parseInt(i.productId),
               quantity: parseInt(i.quantity),
@@ -108,18 +189,59 @@ export default function Purchase() {
             status: 'COMPLETED'
           })
         });
-        Swal.fire('Success', 'Purchase updated!', 'success');
+        markItemAsUpdated('purchase', editingId);
+
+        // Automated WhatsApp Notification to Partners
+        const waMsg = createPurchaseWhatsAppMessage({
+          purchaseId: editingId,
+          supplierName,
+          totalAmount: totalCost,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, totalCost - parseFloat(paidAmount)),
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'PURCHASE_UPDATE',
+          referenceId: String(editingId),
+          category: 'PURCHASE',
+          actionType: 'UPDATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Purchase updated & WhatsApp alert sent!', 'success');
       } else {
-        await apiRequest('/purchase/create-purchase', {
+        const createRes = await apiRequest('/purchase/create-purchase', {
           method: 'POST',
           body: JSON.stringify(payload)
         });
-        Swal.fire('Success', 'Purchase recorded and stock added!', 'success');
+        const createdPurchaseId = createRes?.data?.purchaseId || 'New';
+
+        // Automated WhatsApp Notification to Partners
+        const waMsg = createPurchaseWhatsAppMessage({
+          purchaseId: createdPurchaseId,
+          supplierName,
+          totalAmount: totalCost,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, totalCost - parseFloat(paidAmount)),
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartners(apiRequest, {
+          message: waMsg,
+          eventType: 'PURCHASE_CREATE',
+          referenceId: String(createdPurchaseId),
+          category: 'PURCHASE',
+          actionType: 'CREATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Purchase recorded, stock added & Partners alerted via WhatsApp!', 'success');
       }
       setItems([{ productId: '', quantity: 0, unitCost: 0 }]);
       setSupplierId('');
       setPaidAmount(0);
       setEditingId(null);
+      setEditingPurchaseDate(null);
       setShowCreateForm(false);
       loadData();
     } catch (err) {
@@ -129,6 +251,7 @@ export default function Purchase() {
 
   const handleEdit = (p) => {
     setEditingId(p.purchaseId);
+    setEditingPurchaseDate(p.purchaseDate);
     setSupplierId(p.supplierId ? String(p.supplierId) : '');
     setPaidAmount(p.paidAmount);
     setItems(p.details && p.details.length > 0 ? p.details.map(d => ({
@@ -176,6 +299,25 @@ export default function Purchase() {
     return prod ? prod.variantName : '';
   };
 
+  const downloadCSV = async () => {
+    const rows = [
+      ['Date', 'Invoice No', 'Supplier', 'Items Count', 'Total Amount', 'Paid Amount', 'Due Amount', 'Status'],
+      ...filteredPurchases.map(p => [
+        formatDateDDMMYYYY(p.purchaseDate),
+        p.invoiceNumber || '-',
+        p.supplierName || 'Unknown',
+        p.details?.length || 0,
+        p.totalAmount || 0,
+        p.paidAmount || 0,
+        p.balanceAmount || 0,
+        p.paymentStatus || 'UNKNOWN'
+      ])
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const filename = `Purchase_Report_${new Date().getTime()}.csv`;
+    await downloadCsvCrossPlatform(csv, filename);
+  };
+
   return (
     <div className="space-y-4">
       {/* =========================================================
@@ -204,7 +346,7 @@ export default function Purchase() {
         <div className="grid grid-cols-4 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
-            <span className="text-[11px] font-black text-slate-900">{new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' })}</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Purchases</span>
@@ -224,25 +366,37 @@ export default function Purchase() {
       {/* =========================================================
           HEADER
       ========================================================= */}
-      <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
-        <div className="flex items-center gap-1.5 text-[10px] sm:text-xs font-semibold text-slate-500 uppercase tracking-widest">
-          <span>Operations</span>
-          <ChevronRight size={12} className="text-slate-400" />
-          <span className="text-brand-accent">Purchase Ledger</span>
-        </div>
-        <div className="flex justify-between items-center gap-2.5">
-          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
+      <section className="flex flex-row justify-between items-center gap-2 print:hidden">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Operations</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Purchase Ledger</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
             Purchase Management
           </h1>
-          <div className="flex gap-2 shrink-0">
+        </div>
+        <div className="flex gap-2 shrink-0">
+          
             <button
-              onClick={() => window.print()}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+              onClick={downloadCSV}
+              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+            >
+              <Download size={14} className="text-slate-400" />
+              <span className="hidden xs:inline">Download CSV</span>
+            </button>
+          
+          
+            <button
+              onClick={handlePrint}
+              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden sm:inline">Print Report</span>
+              <span className="hidden xs:inline">Print Report</span>
             </button>
-            <button 
+          
+          <button 
               onClick={() => {
                 setEditingId(null);
                 setSupplierId('');
@@ -256,7 +410,6 @@ export default function Purchase() {
               New Purchase
             </button>
           </div>
-        </div>
       </section>
 
       {/* =====================================================
@@ -264,7 +417,13 @@ export default function Purchase() {
       ===================================================== */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
         {/* Total Purchases Count */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All purchases"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-blue-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
@@ -276,7 +435,13 @@ export default function Purchase() {
         </div>
 
         {/* Total Purchases Cost */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All purchases"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-emerald-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
@@ -288,7 +453,13 @@ export default function Purchase() {
         </div>
 
         {/* Paid */}
-        <div className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter(balanceFilter === 'paid' ? 'all' : 'paid')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Paid purchases"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-indigo-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-100 text-indigo-600">
@@ -300,7 +471,13 @@ export default function Purchase() {
         </div>
 
         {/* Due */}
-        <div className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-2.5 sm:p-4 shadow-sm border border-rose-400 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        <div 
+          onClick={() => setBalanceFilter(balanceFilter === 'due' ? 'all' : 'due')}
+          role="button"
+          tabIndex={0}
+          className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-2.5 sm:p-4 shadow-sm border border-rose-400 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Pending/Due purchases"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-white/10 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
@@ -315,50 +492,82 @@ export default function Purchase() {
       {/* =====================================================
           FILTER BAR
       ===================================================== */}
-      <section className="bg-[#fff7f9] rounded-2xl p-2 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden">
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden items-stretch lg:items-center justify-between">
         {/* Search */}
-        <div className="relative flex-1">
+        <div className="relative flex-1 min-w-0">
           <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
             type="text"
             value={search}
             onChange={e => setSearch(e.target.value)}
             placeholder="Search suppliers, PUR codes..."
-            className="h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
           />
         </div>
 
-        <div className="flex flex-col sm:flex-row gap-2">
-          {/* Date Picker Range Inputs */}
-          <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-9 w-full sm:w-auto">
-            <CalendarDays size={13} className="text-slate-400 hidden sm:block" />
-            <input
-              type="date"
-              value={fromDate}
-              onChange={e => setFromDate(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-none flex-1 min-w-[110px] sm:w-[125px] sm:flex-none pl-1"
-            />
-            <span className="text-slate-300 text-[10px] shrink-0">-</span>
-            <input
-              type="date"
-              value={toDate}
-              onChange={e => setToDate(e.target.value)}
-              className="bg-transparent text-xs font-semibold text-slate-700 outline-none flex-1 min-w-[110px] sm:w-[125px] sm:flex-none pl-1"
-            />
+        <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            {/* Period Preset Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={datePreset}
+                onChange={e => {
+                  const val = e.target.value;
+                  setDatePreset(val);
+                  if (val !== 'custom') {
+                    const range = getPresetDateRange(val);
+                    setFromDate(range.fromDate);
+                    setToDate(range.toDate);
+                  }
+                }}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-bold text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[120px] cursor-pointer"
+              >
+                <option value="thisMonth">This Month</option>
+                <option value="today">Today</option>
+                <option value="lastMonth">Last Month</option>
+                <option value="quarter">This Quarter</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+
+            {/* Status Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={balanceFilter}
+                onChange={e => setBalanceFilter(e.target.value)}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[110px] cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="paid">Paid Only</option>
+                <option value="due">Outstanding Due</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
           </div>
 
-          {/* Status Dropdown */}
-          <div className="relative w-full sm:w-auto">
-            <select
-              value={balanceFilter}
-              onChange={e => setBalanceFilter(e.target.value)}
-              className="h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-[11px] font-medium text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[110px]"
-            >
-              <option value="all">All Statuses</option>
-              <option value="paid">Paid Only</option>
-              <option value="due">Outstanding Due</option>
-            </select>
-            <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          {/* Date Picker Range Inputs */}
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-10 sm:h-9 w-full sm:w-auto">
+            <CalendarDays size={13} className="text-slate-400 hidden sm:block shrink-0" />
+            <DateInput 
+              value={fromDate}
+              onChange={e => {
+                setFromDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
+            <span className="text-slate-300 text-[10px] shrink-0">-</span>
+            <DateInput 
+              value={toDate}
+              onChange={e => {
+                setToDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
           </div>
         </div>
       </section>
@@ -391,10 +600,11 @@ export default function Purchase() {
               ) : (
                 filteredPurchases.map((p) => (
                   <tr key={p.purchaseId} className="hover:bg-slate-50/80 transition-colors group">
-                    <td className="px-3 py-2">
+                    <td className="px-3 py-2 whitespace-nowrap">
                       <span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] font-medium whitespace-nowrap">
                         PUR-{p.purchaseId}
                       </span>
+                      <span className="text-[10px] text-slate-400 font-medium block mt-0.5">{formatDateDDMMYYYY(p.purchaseDate)}</span>
                     </td>
                     <td className="px-3 py-2 font-bold text-slate-800 text-xs truncate">{p.supplierName}</td>
                     <td className="px-3 py-2">
@@ -495,7 +705,7 @@ export default function Purchase() {
                         <span className="text-[10px] font-bold text-blue-200 font-mono tracking-wider">PUR-{invoice.purchaseId}</span>
                         <span className="w-1 h-1 rounded-full bg-slate-400"></span>
                         <span className="text-[10px] font-medium text-slate-300">
-                          {new Date(invoice.purchaseDate).toLocaleDateString()}
+                          {formatDateDDMMYYYY(invoice.purchaseDate)}
                         </span>
                       </div>
                     </div>
@@ -698,16 +908,148 @@ export default function Purchase() {
                   />
                 </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payment Account</label>
-                  <select
-                    value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                    required
-                  >
-                    {accounts.map(a => <option key={a.accountId} value={a.accountName}>{a.accountName}</option>)}
-                  </select>
+                {/* Payment Account Selection & Multi-Partner Split */}
+                <div className="bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                      Payment Account / Partners
+                    </label>
+                    {accounts.length > 1 && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const nextSplit = !isSplitPayment;
+                          setIsSplitPayment(nextSplit);
+                          if (nextSplit && paymentContributions.length === 0) {
+                            const amt = parseFloat(paidAmount) || 0;
+                            setPaymentContributions(
+                              accounts.map((a, i) => ({
+                                accountName: a.accountName,
+                                amount: i === 0 ? amt : 0
+                              }))
+                            );
+                          }
+                        }}
+                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors shadow-sm"
+                      >
+                        {isSplitPayment ? 'Single Account' : '👥 Split Across Partners'}
+                      </button>
+                    )}
+                  </div>
+
+                  {!isSplitPayment ? (
+                    <div>
+                      <select
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all"
+                        required
+                      >
+                        {accounts.map(a => {
+                          const inHand = getAccountInHand(a.accountName);
+                          return (
+                            <option key={a.accountId} value={a.accountName}>
+                              {a.accountName} (In-Hand: ₹{inHand.toLocaleString()})
+                            </option>
+                          );
+                        })}
+                      </select>
+
+                      <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
+                        <span className="text-slate-500">Available In-Hand:</span>
+                        <span className={`font-mono ${getAccountInHand(accountName) <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}`}>
+                          ₹{getAccountInHand(accountName).toLocaleString()}
+                        </span>
+                      </div>
+
+                      {parseFloat(paidAmount) > getAccountInHand(accountName) && parseFloat(paidAmount) > 0 && (
+                        <div className="mt-2 p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold leading-tight">
+                          ⚠️ Insufficient In-Hand Cash (Available: ₹{getAccountInHand(accountName).toLocaleString()}). Please record partner investment first.
+                        </div>
+                      )}
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      {paymentContributions.map((contrib, cIdx) => {
+                        const inHand = getAccountInHand(contrib.accountName);
+                        const isOver = parseFloat(contrib.amount) > inHand;
+                        return (
+                          <div key={cIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+                            <div className="flex gap-2 items-center">
+                              <select
+                                value={contrib.accountName}
+                                onChange={(e) => updateContribution(cIdx, 'accountName', e.target.value)}
+                                className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                              >
+                                {accounts.map(a => (
+                                  <option key={a.accountId} value={a.accountName}>
+                                    {a.accountName}
+                                  </option>
+                                ))}
+                              </select>
+                              <div className="relative w-1/2 flex items-center">
+                                <span className="absolute left-2 text-xs font-bold text-slate-400">₹</span>
+                                <input
+                                  type="number"
+                                  step="any"
+                                  value={contrib.amount}
+                                  onChange={(e) => updateContribution(cIdx, 'amount', e.target.value)}
+                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 text-xs font-bold text-slate-900"
+                                  placeholder="Amount"
+                                />
+                                {paymentContributions.length > 1 && (
+                                  <button
+                                    type="button"
+                                    onClick={() => removeContributionRow(cIdx)}
+                                    className="ml-1 p-1 text-rose-500 hover:text-rose-700 rounded-md"
+                                  >
+                                    ✕
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                            <div className="flex justify-between text-[10px] font-bold">
+                              <span className="text-slate-400">Available: <span className={inHand <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700 font-mono'}>₹{inHand.toLocaleString()}</span></span>
+                              {isOver && <span className="text-rose-600 font-bold">⚠️ Exceeds In-Hand</span>}
+                            </div>
+                          </div>
+                        );
+                      })}
+
+                      <div className="flex justify-between items-center pt-1 gap-2 flex-wrap">
+                        <div className="flex gap-2">
+                          <button
+                            type="button"
+                            onClick={addContributionRow}
+                            className="text-[10px] font-bold text-brand-accent hover:text-blue-700 flex items-center gap-1"
+                          >
+                            + Add Partner
+                          </button>
+                          {parseFloat(paidAmount) > 0 && paymentContributions.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const total = parseFloat(paidAmount) || 0;
+                                const split = Math.round((total / paymentContributions.length) * 100) / 100;
+                                setPaymentContributions(paymentContributions.map((c, i) => ({
+                                  ...c,
+                                  amount: i === paymentContributions.length - 1 ? parseFloat((total - (split * (paymentContributions.length - 1))).toFixed(2)) : split
+                                })));
+                              }}
+                              className="text-[10px] font-bold text-slate-500 hover:text-slate-800"
+                            >
+                              [ Split Equally ]
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-[11px] font-mono font-bold text-slate-700">
+                          Total Split: <span className={Math.abs(paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0) - parseFloat(paidAmount || 0)) < 0.01 ? 'text-emerald-600' : 'text-amber-600'}>
+                            ₹{paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0).toLocaleString()}
+                          </span> / ₹{parseFloat(paidAmount || 0).toLocaleString()}
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
@@ -731,81 +1073,103 @@ export default function Purchase() {
         </div>
       )}
 
-      {/* Details View Modal */}
+      {/* =========================================================
+          VIEW PURCHASE VOUCHER MODAL
+      ========================================================= */}
       {selectedPurchase && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-fade-in">
-          <div className="bg-[#ffeef1] border border-pink-200/80 max-w-md w-full rounded-2xl p-5 shadow-2xl relative">
-            <button
-              onClick={() => setSelectedPurchase(null)}
-              className="absolute top-4 right-4 text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
-            >
-              ✕
-            </button>
-            <h3 className="text-lg font-black text-slate-900 tracking-tight mb-4 flex items-center gap-2">
-              <FileText size={18} className="text-brand-accent" /> 
-              Purchase Details: PUR-{selectedPurchase.purchaseId}
-            </h3>
-            
-            <div className="grid grid-cols-2 gap-4 text-xs border-b border-slate-100 pb-4 mb-4">
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest mb-1">Supplier</p>
-                <p className="text-slate-900 font-bold">{selectedPurchase.supplierName}</p>
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-xl max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between border-b border-pink-200/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-indigo-100 text-indigo-700 flex items-center justify-center font-black">
+                  <FileText size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Purchase Order Voucher</h3>
+                  <span className="text-[10px] font-mono text-slate-500">PUR-{selectedPurchase.purchaseId}</span>
+                </div>
               </div>
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest mb-1">Purchase Date</p>
-                <p className="text-slate-900 font-bold">{new Date(selectedPurchase.purchaseDate).toLocaleDateString()}</p>
+              <button
+                onClick={() => setSelectedPurchase(null)}
+                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-[#fff7f9] p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Supplier:</span>
+                <span className="font-black text-slate-900">{selectedPurchase.supplierName}</span>
               </div>
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest mb-1">Status</p>
-                <p className={`font-black uppercase tracking-widest text-[10px] ${
-                  selectedPurchase.balanceAmount <= 0
-                    ? "text-emerald-600"
-                    : selectedPurchase.paidAmount > 0
-                      ? "text-amber-600"
-                      : "text-rose-600"
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Purchase Date:</span>
+                <span className="font-mono text-slate-800">{formatDateDDMMYYYY(selectedPurchase.purchaseDate)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Payment Status:</span>
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${
+                  selectedPurchase.balanceAmount <= 0 
+                    ? 'bg-emerald-100 text-emerald-700' 
+                    : selectedPurchase.paidAmount > 0 
+                      ? 'bg-amber-100 text-amber-700' 
+                      : 'bg-rose-100 text-rose-700'
                 }`}>
                   {selectedPurchase.balanceAmount <= 0 ? "Paid" : selectedPurchase.paidAmount > 0 ? "Partial" : "Due"}
-                </p>
-              </div>
-              <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                <p className="text-slate-400 text-[9px] uppercase font-bold tracking-widest mb-1">Balance </p>
-                <p className={`font-black ${selectedPurchase.balanceAmount > 0 ? "text-rose-500" : "text-slate-900"}`}>
-                  {money(selectedPurchase.balanceAmount)}
-                </p>
+                </span>
               </div>
             </div>
 
-            <div className="space-y-2 mb-4">
-              <h4 className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Order Items</h4>
-              <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
-                {selectedPurchase.details?.map((d, i) => {
-                  const prod = products.find(prodItem => prodItem.productId === d.productId);
-                  return (
-                    <div key={i} className="bg-[#fff7f9] border border-slate-100 p-3 rounded-xl flex justify-between items-center text-xs shadow-sm">
-                      <div className="flex items-center gap-2">
-                        <div className="w-1.5 h-1.5 rounded-full bg-slate-300"></div>
-                        <p className="text-slate-700 font-bold">{prod ? `${prod.productName} (${prod.variantName})` : `Product #${d.productId}`}</p>
-                      </div>
-                      <div className="text-right flex items-center gap-3">
-                        <span className="text-slate-400 font-medium">{d.quantity} units</span>
-                        <span className="text-slate-900 font-black">{money(d.quantity * d.unitCost)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
+            {/* Items Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-2 text-[10px] uppercase font-bold">Product Name</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Qty</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Unit Cost</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedPurchase.details?.map((d, i) => {
+                    const prod = products.find(prodItem => prodItem.productId === d.productId);
+                    return (
+                      <tr key={i}>
+                        <td className="p-2">
+                          <p className="font-bold text-slate-800">{prod ? `${prod.productName} (${prod.variantName})` : `Product #${d.productId}`}</p>
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{d.quantity}</td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{money(d.unitCost)}</td>
+                        <td className="p-2 text-right font-mono font-black text-slate-900">{money(d.quantity * d.unitCost)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-100 font-black text-xs divide-y divide-slate-200">
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Total Purchase Value</td>
+                    <td className="p-2 text-right font-mono text-slate-900">{money(selectedPurchase.totalAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Paid Outflow</td>
+                    <td className="p-2 text-right font-mono text-emerald-700">{money(selectedPurchase.paidAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan="3" className="p-2 uppercase text-[10px] text-slate-600">Balance Payable</td>
+                    <td className={`p-2 text-right font-mono ${selectedPurchase.balanceAmount > 0 ? "text-rose-600" : "text-slate-900"}`}>
+                      {money(selectedPurchase.balanceAmount)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
             </div>
 
-            <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 flex justify-between items-center">
-              <span className="text-[10px] uppercase tracking-widest font-bold text-slate-500">Total Amount:</span>
-              <span className="text-slate-900 font-black text-lg">{money(selectedPurchase.totalAmount)}</span>
-            </div>
-            
-            <div className="flex justify-end pt-4 mt-2 border-t border-slate-100">
+            <div className="flex justify-end pt-2">
               <button
                 type="button"
                 onClick={() => setSelectedPurchase(null)}
-                className="px-6 py-2.5 bg-slate-100 text-slate-700 hover:bg-slate-200 hover:text-slate-900 rounded-xl font-bold text-xs transition-colors"
+                className="px-6 py-2 bg-[#fff7f9] text-slate-700 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-bold text-xs border border-slate-200 transition-colors shadow-sm"
               >
                 Close
               </button>

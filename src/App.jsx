@@ -15,9 +15,11 @@ import Partner from './pages/Partner';
 import PartnerLedger from './pages/PartnerLedger';
 import BusinessAccount from './pages/BusinessAccount';
 import Expense from './pages/Expense';
+import SalesOrder from './pages/SalesOrder';
 import UsersAndRoles from './pages/UsersAndRoles';
 import AuditLog from './pages/AuditLog';
 import ProfitLossReport from './pages/ProfitLossReport';
+import NotificationCenter from './components/NotificationCenter';
 import logoImg from './assets/logo.png';
 
 import {
@@ -25,8 +27,10 @@ import {
   Users, UserCheck, ShoppingCart, ShoppingBag, BookOpen,
   DollarSign, Activity, Settings, Menu, X, ShieldCheck,
   TrendingUp, Leaf, Bell, ChevronDown, ChevronUp, ChevronLeft, ChevronRight,
-  User, UserPlus, Shield
+  User, UserPlus, Shield, Fingerprint, ClipboardList
 } from 'lucide-react';
+import { biometricService } from './services/biometricService';
+import Swal from 'sweetalert2';
 
 // Inline-style based themes for smooth CSS background-color transition
 const NAVBAR_THEMES = [
@@ -84,6 +88,40 @@ const NAVBAR_THEMES = [
 
 function AppContent() {
   const { user, logout } = useAuth();
+  const [biometricEnabled, setBiometricEnabled] = useState(false);
+
+  useEffect(() => {
+    const checkBiometricSettings = async () => {
+      const avail = await biometricService.checkAvailability();
+      if (avail.isAvailable && avail.hasCredentials && avail.configuredUsername === user?.username) {
+        setBiometricEnabled(true);
+      } else {
+        setBiometricEnabled(false);
+      }
+    };
+    if (user) {
+      checkBiometricSettings();
+    }
+  }, [user]);
+
+  const handleDisableBiometrics = async () => {
+    const result = await Swal.fire({
+      title: 'Disable Biometric Login?',
+      text: 'You will need to use your username and password to log in next time.',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonText: 'Yes, disable',
+      cancelButtonText: 'Cancel',
+      confirmButtonColor: '#dc2626',
+      cancelButtonColor: '#64748b'
+    });
+
+    if (result.isConfirmed) {
+      await biometricService.deleteCredentials();
+      setBiometricEnabled(false);
+      Swal.fire('Disabled', 'Biometric login has been disabled.', 'success');
+    }
+  };
   const [activeTab, setActiveTab] = useState(() => {
     return localStorage.getItem('vpms_active_tab') || 'home';
   });
@@ -131,6 +169,7 @@ function AppContent() {
   const currentTabLabel = () => {
     const allItems = [
       { id: 'home', label: 'Dashboard Overview' },
+      { id: 'orders', label: 'Sales Orders (Drafts)' },
       { id: 'sales', label: 'Sales Ledger' },
       { id: 'purchase', label: 'Purchase Intake' },
       { id: 'batch', label: 'Stock Batches' },
@@ -159,8 +198,8 @@ function AppContent() {
       <aside className={`hidden md:flex flex-col bg-brand-sidebar text-slate-300 border-r border-brand-sidebar-hover sticky top-0 h-screen z-40 overflow-y-auto transition-all duration-300 shadow-xl ${desktopSidebarOpen ? 'w-64' : 'w-20'
         }`}>
         {/* Sidebar Header with Leaf logo trigger */}
-        <div className="p-4 border-b border-brand-sidebar-hover flex items-center justify-between gap-2">
-          <div className="flex items-center gap-2.5 overflow-hidden">
+        <div className="p-3.5 border-b border-brand-sidebar-hover flex items-center justify-between gap-1.5">
+          <div className="flex items-center gap-2 overflow-hidden min-w-0">
             <button
               onClick={() => setDesktopSidebarOpen(!desktopSidebarOpen)}
               className="p-1 bg-brand-accent/10 rounded-xl border border-brand-accent/20 hover:bg-brand-accent/20 transition shrink-0 outline-none overflow-hidden"
@@ -169,17 +208,20 @@ function AppContent() {
               <img src={logoImg} alt="Logo" className="w-8 h-8 object-contain rounded-lg" />
             </button>
             {desktopSidebarOpen && (
-              <div className="transition-opacity duration-300">
-                <h1 className="text-sm font-extrabold tracking-tight text-slate-100 leading-none">Vinayaga Plates</h1>
-                <span className="text-[8px] text-brand-accent font-bold uppercase tracking-wider block mt-0.5">Management System</span>
+              <div className="transition-opacity duration-300 min-w-0">
+                <h1 className="text-sm font-extrabold tracking-tight text-slate-100 leading-none whitespace-nowrap">Vinayaga Plates</h1>
+                <span className="text-[8px] text-brand-accent font-bold uppercase tracking-wider block mt-0.5 whitespace-nowrap">Management System</span>
               </div>
             )}
           </div>
-          {desktopSidebarOpen && (
-            <button onClick={() => setDesktopSidebarOpen(false)} className="text-slate-300 hover:text-slate-100 p-1">
-              <ChevronLeft size={16} />
-            </button>
-          )}
+          <div className="flex items-center gap-0.5 shrink-0">
+            <NotificationCenter onNavigate={handleTabSelect} isSidebar={true} />
+            {desktopSidebarOpen && (
+              <button onClick={() => setDesktopSidebarOpen(false)} className="text-slate-300 hover:text-slate-100 p-1">
+                <ChevronLeft size={16} />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Sidebar Navigation */}
@@ -197,6 +239,19 @@ function AppContent() {
             >
               <Home size={15} />
               {desktopSidebarOpen && <span>Dashboard</span>}
+            </button>
+
+            <button
+              onClick={() => handleTabSelect('orders')}
+              className={`w-full flex items-center rounded-xl transition ${desktopSidebarOpen ? 'gap-3 px-3 py-2 justify-start' : 'p-2.5 justify-center'
+                } ${activeTab === 'orders'
+                  ? 'bg-brand-accent text-white border border-brand-accent/20 font-bold'
+                  : 'text-slate-300 hover:text-slate-100 hover:bg-brand-sidebar-hover'
+                }`}
+              title={!desktopSidebarOpen ? 'Sales Orders' : ''}
+            >
+              <ClipboardList size={15} />
+              {desktopSidebarOpen && <span>Sales Orders</span>}
             </button>
 
             <button
@@ -302,6 +357,7 @@ function AppContent() {
               {!collapseFinance && (
                 <div className="pl-3 space-y-1 border-l border-brand-sidebar-hover/50 ml-3.5">
                   <button onClick={() => handleTabSelect('account')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'account' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Accounts</button>
+                  <button onClick={() => handleTabSelect('partnerledger')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'partnerledger' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Partner Ledger</button>
                   <button onClick={() => handleTabSelect('expense')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'expense' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Expenses</button>
                 </div>
               )}
@@ -375,7 +431,17 @@ function AppContent() {
         </nav>
 
         {/* Desktop Sidebar Footer: swapped profile card and sign out button as requested */}
-        <div className="p-3 border-t border-brand-sidebar-hover/50">
+        <div className="p-3 border-t border-brand-sidebar-hover/50 space-y-2">
+          {biometricEnabled && (
+            <button
+              onClick={handleDisableBiometrics}
+              className={`w-full bg-brand-sidebar-hover hover:bg-[#3f0f13]/30 hover:text-rose-400 border border-brand-sidebar-hover/50 py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center ${desktopSidebarOpen ? 'px-3 gap-2' : 'p-2'}`}
+              title="Disable Biometric"
+            >
+              <Fingerprint size={14} />
+              {desktopSidebarOpen && <span>Disable Biometric</span>}
+            </button>
+          )}
           <button
             onClick={logout}
             className={`w-full bg-brand-sidebar-hover hover:bg-[#3f0f13]/30 hover:text-rose-455 border border-brand-sidebar-hover/50 text-brand-accent py-1.5 rounded-xl text-xs font-bold transition flex items-center justify-center ${desktopSidebarOpen ? 'px-3 gap-2' : 'p-2'
@@ -436,6 +502,7 @@ function AppContent() {
 
         {/* Right side items */}
         <div className="flex items-center gap-2">
+          <NotificationCenter onNavigate={handleTabSelect} isMobile={true} />
 
           <div className="relative">
             <button
@@ -464,6 +531,12 @@ function AppContent() {
                     style={{ color: activeTheme.subtitleColor, transition: 'color 1.5s ease-in-out' }}
                   >{displayRole}</p>
                 </div>
+                {biometricEnabled && (
+                  <button onClick={handleDisableBiometrics} className="w-full text-left px-3.5 py-2.5 hover:bg-slate-800/40 text-indigo-400 font-bold transition flex items-center gap-2 border-b border-slate-800">
+                    <Fingerprint size={14} />
+                    <span>Disable Biometrics</span>
+                  </button>
+                )}
                 <button onClick={logout} className="w-full text-left px-3.5 py-2.5 hover:bg-rose-950/40 text-rose-400 font-bold transition flex items-center gap-2">
                   <X size={14} />
                   <span>Sign Out</span>
@@ -487,6 +560,7 @@ function AppContent() {
               {/* Main items */}
               <div className="space-y-1">
                 <button onClick={() => handleTabSelect('home')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition ${activeTab === 'home' ? 'bg-brand-accent text-white border border-brand-accent/20' : 'text-slate-300'}`}><Home size={15} /><span>Dashboard</span></button>
+                <button onClick={() => handleTabSelect('orders')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition ${activeTab === 'orders' ? 'bg-brand-accent text-white border border-brand-accent/20' : 'text-slate-300'}`}><ClipboardList size={15} /><span>Sales Orders</span></button>
                 <button onClick={() => handleTabSelect('sales')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition ${activeTab === 'sales' ? 'bg-brand-accent text-white border border-brand-accent/20' : 'text-slate-300'}`}><ShoppingCart size={15} /><span>Sales Ledger</span></button>
                 <button onClick={() => handleTabSelect('purchase')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition ${activeTab === 'purchase' ? 'bg-brand-accent text-white border border-brand-accent/20' : 'text-slate-300'}`}><ShoppingBag size={15} /><span>Purchase</span></button>
                 <button onClick={() => handleTabSelect('batch')} className={`w-full flex items-center gap-3 px-3 py-2 rounded-xl transition ${activeTab === 'batch' ? 'bg-brand-accent text-white border border-brand-accent/20' : 'text-slate-300'}`}><Package size={15} /><span>Inventory</span></button>
@@ -526,6 +600,7 @@ function AppContent() {
                 {!collapseFinance && (
                   <div className="pl-3 space-y-1 border-l border-brand-sidebar-hover/50 ml-3.5">
                     <button onClick={() => handleTabSelect('account')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'account' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Accounts</button>
+                    <button onClick={() => handleTabSelect('partnerledger')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'partnerledger' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Partner Ledger</button>
                     <button onClick={() => handleTabSelect('expense')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'expense' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Expenses</button>
                   </div>
                 )}
@@ -573,6 +648,12 @@ function AppContent() {
             </nav>
 
             <div className="pt-3 border-t border-brand-sidebar-hover/50 mt-5 space-y-2">
+              {biometricEnabled && (
+                <button onClick={handleDisableBiometrics} className="w-full bg-slate-900/60 hover:bg-slate-900 text-indigo-400 border border-slate-800/20 py-2 rounded-xl text-xs font-bold transition flex items-center justify-center gap-2">
+                  <Fingerprint size={14} />
+                  <span>Disable Biometrics</span>
+                </button>
+              )}
               <button onClick={logout} className="w-full bg-[#3f0f13]/30 hover:bg-[#3f0f13]/50 text-rose-400 border border-rose-950/20 py-2 rounded-xl text-xs font-bold transition">
                 Sign Out
               </button>
@@ -588,7 +669,7 @@ function AppContent() {
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl mx-auto p-4 md:p-8 transition-all duration-300 w-full overflow-x-hidden pb-24 md:pb-8">
         {activeTab === 'home' && <Dashboard onTabSelect={handleTabSelect} />}
-        {activeTab === 'profitloss' && <ProfitLossReport />}
+        {activeTab === 'profitloss' && <ProfitLossReport onNavigate={handleTabSelect} />}
         {activeTab === 'product' && <Product />}
         {activeTab === 'category' && <Category />}
         {activeTab === 'variant' && <Variant />}
@@ -596,6 +677,7 @@ function AppContent() {
         {activeTab === 'batch' && <Batch />}
         {activeTab === 'customer' && <Customer />}
         {activeTab === 'supplier' && <Supplier />}
+        {activeTab === 'orders' && <SalesOrder onNavigateToSale={() => handleTabSelect('sales')} />}
         {activeTab === 'sales' && <Sales />}
         {activeTab === 'purchase' && <Purchase />}
         {activeTab === 'partner' && <Partner />}

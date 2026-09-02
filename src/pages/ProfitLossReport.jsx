@@ -1,17 +1,22 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { TrendingUp, BarChart2, Layers, MapPin, Users, ChevronRight, ChevronDown, CalendarDays } from 'lucide-react';
+import { TrendingUp, BarChart2, Layers, MapPin, Users, ChevronRight, ChevronDown, CalendarDays, Download, Printer, FileText } from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { downloadCsvCrossPlatform } from '../utils/exportCsv';
+import { getCurrentMonthRange, getPresetDateRange, formatDateToYMD, formatDateDDMMYYYY } from '../utils/dateHelper';
+import DateInput from '../components/DateInput';
 
-export default function ProfitLossReport() {
+export default function ProfitLossReport({ onNavigate }) {
   const { apiRequest } = useAuth();
   const [data, setData] = useState(null);
   const [activeTab, setActiveTab] = useState('supplier'); // supplier, batch, size, location
   const [loading, setLoading] = useState(true);
 
-  // Date Filtering States
-  const [preset, setPreset] = useState('all');
-  const [fromDate, setFromDate] = useState('');
-  const [toDate, setToDate] = useState('');
+  // Date Filtering States - Defaults to Current Month (Auto-resets on 1st of every month)
+  const initialDates = getCurrentMonthRange();
+  const [preset, setPreset] = useState('month');
+  const [fromDate, setFromDate] = useState(initialDates.fromDate);
+  const [toDate, setToDate] = useState(initialDates.toDate);
 
   const fetchReport = (from = fromDate, to = toDate) => {
     setLoading(true);
@@ -36,50 +41,10 @@ export default function ProfitLossReport() {
 
   const applyPreset = (presetType) => {
     setPreset(presetType);
-    const now = new Date();
-    let from = '';
-    let to = '';
-
-    const formatDate = (d) => {
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${year}-${month}-${day}`;
-    };
-
-    switch (presetType) {
-      case 'today':
-        from = formatDate(now);
-        to = formatDate(now);
-        break;
-      case 'month': {
-        const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
-        from = formatDate(startOfMonth);
-        to = formatDate(now);
-        break;
-      }
-      case 'quarter': {
-        const currentQuarterStartMonth = Math.floor(now.getMonth() / 3) * 3;
-        const startOfQuarter = new Date(now.getFullYear(), currentQuarterStartMonth, 1);
-        from = formatDate(startOfQuarter);
-        to = formatDate(now);
-        break;
-      }
-      case 'year': {
-        const startOfYear = new Date(now.getFullYear(), 0, 1);
-        from = formatDate(startOfYear);
-        to = formatDate(now);
-        break;
-      }
-      default:
-        from = '';
-        to = '';
-        break;
-    }
-
-    setFromDate(from);
-    setToDate(to);
-    fetchReport(from, to);
+    const range = getPresetDateRange(presetType);
+    setFromDate(range.fromDate);
+    setToDate(range.toDate);
+    fetchReport(range.fromDate, range.toDate);
   };
 
   const handleCustomSubmit = (e) => {
@@ -88,8 +53,51 @@ export default function ProfitLossReport() {
     fetchReport(fromDate, toDate);
   };
 
+  // Download report as CSV — works on both web and Android app
+  const downloadCSV = async () => {
+    if (!data) return;
+    // Inline tab lookup (getTabRecords not yet in scope here)
+    const tabMap = {
+      supplier: { label: 'Supplier', list: data.supplierWise || [] },
+      batch: { label: 'Batch No', list: data.batchWise || [] },
+      size: { label: 'Size / Sizing', list: data.sizeWise || [] },
+      location: { label: 'Godown Location', list: data.locationWise || [] },
+    };
+    const tab = tabMap[activeTab] || { label: 'Category', list: [] };
+    const rows = [
+      ['P&L Report', fromDate ? `From: ${formatDateDDMMYYYY(fromDate)}` : 'All Time', toDate ? `To: ${formatDateDDMMYYYY(toDate)}` : ''],
+      [],
+      [tab.label, 'Qty Purchased', 'Qty Sold', 'Revenue', 'Cost', 'Net Profit'],
+      ...tab.list.map(r => [
+        r.category,
+        r.totalPurchasedQuantity || 0,
+        r.totalQuantity || 0,
+        r.totalRevenue || 0,
+        r.totalCost || 0,
+        r.netProfit || 0,
+      ]),
+      [],
+      ['TOTALS',
+        tab.list.reduce((s, r) => s + (Number(r.totalPurchasedQuantity) || 0), 0),
+        tab.list.reduce((s, r) => s + (Number(r.totalQuantity) || 0), 0),
+        tab.list.reduce((s, r) => s + (Number(r.totalRevenue) || 0), 0),
+        tab.list.reduce((s, r) => s + (Number(r.totalCost) || 0), 0),
+        tab.list.reduce((s, r) => s + (Number(r.netProfit) || 0), 0),
+      ],
+      [],
+      ['Summary'],
+      ['Total Revenue', data.totalRevenue],
+      ['Total Cost of Goods', data.totalCost],
+      ['Total Expenses', data.totalExpenses || 0],
+      ['Net Profit', data.totalProfit],
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const filename = `PL_Report_${fromDate || 'All'}_to_${toDate || 'All'}.csv`;
+    await downloadCsvCrossPlatform(csv, filename);
+  };
+
   useEffect(() => {
-    fetchReport('', '');
+    fetchReport(initialDates.fromDate, initialDates.toDate);
   }, []);
 
   if (loading) {
@@ -126,46 +134,89 @@ export default function ProfitLossReport() {
     return '₹' + Number(val).toLocaleString('en-IN', { maximumFractionDigits: 2 });
   };
 
-  return (
-    <div className="space-y-6">
-      {/* =====================================================
-          HEADER SECTION (Title & Info & Print)
-      ===================================================== */}
-      <section className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 rounded-3xl p-6 sm:p-8 text-white overflow-hidden shadow-xl shadow-blue-950/15">
-        <div className="absolute right-0 top-0 w-80 h-80 bg-blue-500/10 rounded-full blur-3xl pointer-events-none" />
-        <div className="absolute left-1/3 bottom-0 w-60 h-60 bg-emerald-500/5 rounded-full blur-3xl pointer-events-none" />
-        
-        <div className="relative z-10 flex flex-col md:flex-row md:items-center justify-between gap-6">
-          <div className="space-y-2">
-            <div className="flex items-center gap-2 text-blue-400 font-mono text-[10px] uppercase tracking-widest font-black">
-              <span>Operations</span>
-              <ChevronRight size={10} className="text-slate-500" />
-              <span className="text-slate-300">P&L Reports Statement</span>
-            </div>
-            <h1 className="text-2xl sm:text-3xl leading-none font-serif font-extrabold tracking-tight text-slate-800">
-              Profit & Loss Ledger
-            </h1>
-            <p className="text-xs sm:text-sm text-slate-300 max-w-xl font-medium leading-relaxed">
-              Executive statement tracking sales revenue, cost of goods sold (COGS), and net margin across batches, sizes, suppliers, and godowns.
-            </p>
-          </div>
+  const isMobile = Capacitor.isNativePlatform();
 
-          <div className="flex items-center gap-2 shrink-0 self-start md:self-center">
+  return (
+    <div className="space-y-4">
+      {/* =====================================================
+          HEADER — same style as Sales.jsx
+      ===================================================== */}
+      <section className="flex flex-row justify-between items-center gap-2 print:hidden">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Reports</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">P&amp;L</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
+            Profit &amp; Loss
+          </h1>
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+          {/* Mobile: Download CSV */}
+          
+            <button
+              onClick={downloadCSV}
+              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-3 py-2 text-xs font-bold transition shadow-sm"
+            >
+              <Download size={14} className="text-slate-400" />
+              <span>Download CSV</span>
+            </button>
+          
+          {/* Web: Print Report */}
+          
             <button
               onClick={() => window.print()}
-              className="inline-flex items-center gap-2 bg-white/10 hover:bg-white/20 active:scale-95 text-white border border-white/20 backdrop-blur-md rounded-2xl px-4 py-2.5 text-xs font-bold transition-all shadow-lg hover:shadow-blue-500/20 group"
+              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-3 py-2 text-xs font-bold transition shadow-sm"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="text-slate-300 group-hover:text-white transition-colors"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span>Print Statement</span>
+              <FileText size={14} className="text-slate-400" />
+              <span>Print Report</span>
             </button>
-          </div>
         </div>
       </section>
+
+      {/* =========================================================
+          PREMIUM PRINT ONLY REPORT HEADER (Vinayaga Plates)
+      ========================================================= */}
+      <div className="hidden print:block mb-5 space-y-3">
+        <div className="text-center pb-2.5 border-b-2 border-slate-900">
+          <div className="flex items-center justify-center gap-3 mb-0.5">
+            <div className="h-[1.5px] w-12 bg-blue-900" />
+            <h1 className="text-3xl font-black tracking-[0.2em] text-blue-950 uppercase print-brand-title">
+              VINAYAGA PLATES
+            </h1>
+            <div className="h-[1.5px] w-12 bg-blue-900" />
+          </div>
+          <p className="text-[8px] font-bold text-slate-500 uppercase tracking-[0.3em]">
+            Manufacturing & Inventory Management System
+          </p>
+          <div className="mt-2">
+            <span className="inline-block px-4 py-0.5 rounded bg-slate-900 text-white font-extrabold text-[11px] uppercase tracking-widest">
+              Profit &amp; Loss Report
+            </span>
+          </div>
+        </div>
+
+        {/* Structured KPI Metadata Strip */}
+        <div className="grid grid-cols-2 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
+          <div className="px-2 py-0.5 border-r border-slate-200">
+            <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
+            <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
+          </div>
+          <div className="px-2 py-0.5">
+            <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Period</span>
+            <span className="text-[11px] font-black text-slate-900">
+              {preset === 'all' ? 'All Time History' : `${formatDateDDMMYYYY(fromDate)} to ${formatDateDDMMYYYY(toDate)}`}
+            </span>
+          </div>
+        </div>
+      </div>
 
       {/* =====================================================
           PRESET & DATE RANGE FILTER BAR
       ===================================================== */}
-      <section className="bg-white rounded-2xl p-2.5 sm:p-3 shadow-sm border border-slate-100 flex flex-col lg:flex-row items-center gap-2.5 print:hidden">
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-3 shadow-sm border border-slate-100 flex flex-col lg:flex-row items-center gap-2.5 print:hidden">
         <div className="relative w-full lg:w-48 shrink-0">
           <select
             value={preset}
@@ -182,27 +233,24 @@ export default function ProfitLossReport() {
           <ChevronDown size={14} className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
         </div>
         
-        {/* Date Range Inputs */}
         <div className="flex items-center justify-between sm:justify-start gap-2 rounded-xl bg-slate-50 border border-slate-200/80 px-3.5 h-10 w-full flex-1 min-w-0">
           <CalendarDays size={15} className="text-slate-400 shrink-0 hidden xs:block" />
-          <input
-            type="date"
+          <DateInput 
             value={fromDate}
             onChange={(e) => {
               setFromDate(e.target.value);
               setPreset('custom');
             }}
-            className="bg-transparent text-xs font-bold text-slate-800 outline-none w-full min-w-0"
+            className="w-full flex-1 min-w-0"
           />
-          <span className="text-slate-400 text-xs font-black shrink-0">→</span>
-          <input
-            type="date"
+          <span className="text-slate-400 text-xs font-black shrink-0">-</span>
+          <DateInput 
             value={toDate}
             onChange={(e) => {
               setToDate(e.target.value);
               setPreset('custom');
             }}
-            className="bg-transparent text-xs font-bold text-slate-800 outline-none w-full min-w-0"
+            className="w-full flex-1 min-w-0"
           />
         </div>
 
@@ -218,7 +266,14 @@ export default function ProfitLossReport() {
           SUMMARY METRICS CARDS
       ===================================================== */}
       <section className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4 print:hidden">
-        <div className="bg-white rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        {/* Total Revenue → Sales */}
+        <div
+          onClick={() => onNavigate && onNavigate('sales')}
+          role="button"
+          tabIndex={0}
+          title="Go to Sales Invoices"
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-emerald-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
@@ -229,29 +284,43 @@ export default function ProfitLossReport() {
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(data.totalRevenue)}</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        {/* Total Cost → Purchase */}
+        <div
+          onClick={() => onNavigate && onNavigate('purchase')}
+          role="button"
+          tabIndex={0}
+          title="Go to Purchases"
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-blue-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
               <BarChart2 size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>COGS</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Cost</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(data.totalCost)}</p>
         </div>
 
-        <div className="bg-white rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group">
+        {/* Total Expenses → Expense */}
+        <div
+          onClick={() => onNavigate && onNavigate('expense')}
+          role="button"
+          tabIndex={0}
+          title="Go to Expenses"
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+        >
           <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-amber-50 rounded-full transition-transform group-hover:scale-150" />
           <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-amber-100 text-amber-600">
               <BarChart2 size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Opex</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Expenses</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(data.totalExpenses || 0)}</p>
         </div>
 
-        {/* Net Profit Card - Styled similarly to Outstanding Due with elegant green gradient */}
+        {/* Net Profit Card */}
         <div className={`rounded-2xl p-2.5 sm:p-4 shadow-sm flex flex-col hover:shadow-md hover:-translate-y-0.5 transition-all relative overflow-hidden group ${
           data.totalProfit >= 0 
             ? 'bg-gradient-to-br from-emerald-600 to-emerald-700 border border-emerald-500' 
@@ -271,7 +340,7 @@ export default function ProfitLossReport() {
       {/* =====================================================
           TAB SELECTOR & HISTORY
       ===================================================== */}
-      <section className="bg-white shadow-sm border border-slate-100 rounded-2xl p-2 flex flex-col gap-2">
+      <section className="bg-[#fff7f9] shadow-sm border border-slate-100 rounded-2xl p-2 flex flex-col gap-2">
         <div className="flex flex-wrap gap-1.5 border-b border-slate-100 pb-2 px-1 pt-1 print:hidden">
           <button
             onClick={() => setActiveTab('supplier')}
@@ -312,7 +381,7 @@ export default function ProfitLossReport() {
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Qty Purchased</th>
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Qty Sold</th>
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Revenue</th>
-                <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Cost (COGS)</th>
+                <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Cost</th>
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-500 uppercase tracking-widest whitespace-nowrap text-right">Net Profit</th>
               </tr>
             </thead>
@@ -402,7 +471,7 @@ export default function ProfitLossReport() {
                     <span className="font-mono font-bold text-slate-800">{money(r.totalRevenue)}</span>
                   </div>
                   <div className="flex justify-between">
-                    <span className="font-bold text-slate-400">COGS Material Cost:</span>
+                    <span className="font-bold text-slate-400">Cost:</span>
                     <span className="font-mono font-bold text-slate-800">{money(r.totalCost)}</span>
                   </div>
                 </div>

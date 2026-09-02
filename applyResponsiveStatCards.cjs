@@ -166,8 +166,8 @@ plContent = plContent.replace(
           </div>
           <div className="flex items-baseline gap-1.5 sm:flex-col sm:items-start sm:gap-0 overflow-hidden">
             <span className="text-[9px] sm:text-[10px] font-semibold text-slate-500 uppercase tracking-wider whitespace-nowrap">
-              <span className="sm:hidden">COGS:</span>
-              <span className="hidden sm:inline">Total COGS</span>
+              <span className="sm:hidden">Cost:</span>
+              <span className="hidden sm:inline">Total Cost</span>
             </span>
             <span className="text-xs sm:text-lg font-extrabold text-slate-800 whitespace-nowrap sm:mt-1">{money(data.totalCost)}</span>
             <p className="hidden sm:block text-[9px] text-slate-500 leading-tight mt-0.5">Landed material cost</p>

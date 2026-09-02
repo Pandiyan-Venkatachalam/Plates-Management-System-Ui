@@ -23,13 +23,9 @@ dist-ssr
 *.sln
 *.sw?
 
-# Temporary recovery scripts
-scratch_*.js
-scratch_*.cjs
-recovered_*.jsx
-recovered_*.txt
+# Android build outputs & APKs
+android/app/build/
+android/.gradle/
+android/build/
+*.apk
 
-# Mobile build files that shouldn't go to git
-/android/app/build/
-/android/.gradle/
-/android/local.properties
