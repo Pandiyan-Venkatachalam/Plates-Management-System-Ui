@@ -335,6 +335,7 @@ function AppContent() {
                 <div className="pl-3 space-y-1 border-l border-brand-sidebar-hover/50 ml-3.5">
                   <button onClick={() => handleTabSelect('product')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'product' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Products Master</button>
                   <button onClick={() => handleTabSelect('category')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'category' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Categories</button>
+                  <button onClick={() => handleTabSelect('variant')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'variant' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Variants (Sizing)</button>
                   <button onClick={() => handleTabSelect('unit')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'unit' ? 'text-brand-accent font-bold' : 'text-slate-300 hover:text-slate-100'}`}>Units</button>
                 </div>
               )}
@@ -582,6 +583,7 @@ function AppContent() {
                   <div className="pl-3 space-y-1 border-l border-brand-sidebar-hover/50 ml-3.5">
                     <button onClick={() => handleTabSelect('product')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'product' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Products Master</button>
                     <button onClick={() => handleTabSelect('category')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'category' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Categories</button>
+                    <button onClick={() => handleTabSelect('variant')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'variant' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Variants (Sizing)</button>
                     <button onClick={() => handleTabSelect('unit')} className={`w-full text-left px-3 py-1.5 rounded-lg transition ${activeTab === 'unit' ? 'text-brand-accent font-bold' : 'text-slate-300'}`}>Units</button>
                   </div>
                 )}
