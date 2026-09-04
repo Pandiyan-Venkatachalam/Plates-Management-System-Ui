@@ -137,7 +137,8 @@ export default function Sales() {
             paidAmount: parseFloat(paidAmount),
             paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : parseFloat(paidAmount) > 0 ? 'PARTIAL' : 'UNPAID',
             status: 'COMPLETED',
-            adjustment: parseFloat(adjustment) || 0
+            adjustment: parseFloat(adjustment) || 0,
+            paymentMethodAccountName: accountName
           })
         });
         markItemAsUpdated('sales', editingId);
@@ -208,6 +209,7 @@ export default function Sales() {
     setEditingSaleDate(s.saleDate);
     setCustomerId(s.customerId ? String(s.customerId) : '');
     setPaidAmount(s.paidAmount);
+    setAccountName(s.paymentMethodAccountName || s.accountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash'));
     setItems(s.details && s.details.length > 0 ? s.details.map(d => ({
       productId: d.productId ? String(d.productId) : '',
       batchId: d.batchId ? String(d.batchId) : '',
@@ -240,16 +242,30 @@ export default function Sales() {
   };
 
   const handleCollectPayment = async (s) => {
-    const result = await Swal.fire({
-      title: 'Confirm Payment',
-      text: `Mark invoice INV-${s.saleId} as fully paid? Collected amount will be set to ₹${s.totalAmount}.`,
-      icon: 'question',
+    const defaultAcc = s.paymentMethodAccountName || s.accountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash');
+    const optionsHtml = accounts.map(a => `<option value="${a.accountName}" ${a.accountName === defaultAcc ? 'selected' : ''}>${a.accountName}</option>`).join('');
+
+    const { value: chosenAccount, isConfirmed } = await Swal.fire({
+      title: 'Collect Full Payment',
+      html: `
+        <p class="text-xs text-slate-500 mb-3">Mark invoice <b>INV-${s.saleId}</b> as fully paid (${money(s.totalAmount)})?</p>
+        <div class="text-left">
+          <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Deposit Into Account</label>
+          <select id="swal-collect-acc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
+            ${optionsHtml}
+          </select>
+        </div>
+      `,
+      preConfirm: () => {
+        return document.getElementById('swal-collect-acc')?.value || defaultAcc;
+      },
       showCancelButton: true,
       confirmButtonColor: '#10b981',
       cancelButtonColor: '#ef4444',
-      confirmButtonText: 'Yes, mark paid!'
+      confirmButtonText: 'Yes, Collect Payment!'
     });
-    if (!result.isConfirmed) return;
+
+    if (!isConfirmed) return;
     try {
       await apiRequest(`/sales/${s.saleId}`, {
         method: 'PUT',
@@ -265,7 +281,8 @@ export default function Sales() {
           totalAmount: s.totalAmount,
           paidAmount: s.totalAmount,
           paymentStatus: 'PAID',
-          status: s.status
+          status: s.status,
+          paymentMethodAccountName: chosenAccount
         })
       });
       markItemAsUpdated('sales', s.saleId);
@@ -289,7 +306,7 @@ export default function Sales() {
         performedBy: 'Admin'
       });
 
-      Swal.fire('Paid!', 'Payment collected successfully & WhatsApp notification dispatched!', 'success');
+      Swal.fire('Paid!', `Payment recorded into ${chosenAccount} & WhatsApp notification dispatched!`, 'success');
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
@@ -419,6 +436,7 @@ export default function Sales() {
               setItems([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
               setPaidAmount(0);
               setAdjustment(0);
+              if (accounts.length > 0) setAccountName(accounts[0].accountName);
               setShowCreateForm(true);
             }}
             className="flex items-center gap-1.5 bg-gradient-to-r from-brand-accent to-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5 transition-all"
@@ -629,7 +647,12 @@ export default function Sales() {
                     </div>
                   </td>
                   <td className="px-3 py-2 text-right font-black text-slate-900 whitespace-nowrap">{money(s.totalAmount)}</td>
-                  <td className="px-3 py-2 text-right text-slate-600 font-bold whitespace-nowrap">{money(s.paidAmount)}</td>
+                  <td className="px-3 py-2 text-right text-slate-600 font-bold whitespace-nowrap">
+                    <div>{money(s.paidAmount)}</div>
+                    {s.paidAmount > 0 && s.accountName && (
+                      <span className="text-[9px] font-bold text-blue-600 block leading-tight">({s.accountName})</span>
+                    )}
+                  </td>
                   <td className={`px-3 py-2 text-right font-black whitespace-nowrap ${s.balanceAmount > 0 ? "text-rose-500" : "text-emerald-500"}`}>
                     {money(s.balanceAmount)}
                   </td>
@@ -742,6 +765,9 @@ export default function Sales() {
                 <div className="border-l border-slate-100 pl-3">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Paid</p>
                   <p className="mt-0.5 text-sm font-bold text-slate-600">{money(invoice.paidAmount)}</p>
+                  {invoice.paidAmount > 0 && invoice.accountName && (
+                    <span className="text-[8px] font-bold text-blue-600 block truncate">({invoice.accountName})</span>
+                  )}
                 </div>
                 <div className="border-l border-slate-100 pl-3">
                   <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Balance</p>
