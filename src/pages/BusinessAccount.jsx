@@ -7,11 +7,25 @@ import { sortLatestFirst } from '../utils/sortHelper';
 import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
 import DateInput from '../components/DateInput';
 
-const formatAccountType = (type) => {
-  if (!type) return "Pandiyan's Acc";
-  if (type === 'CASH' || type === 'PANDIYAN' || type.toLowerCase().includes('pandiyan')) return "Pandiyan's Acc";
-  if (type === 'BANK' || type === 'RANJITH' || type.toLowerCase().includes('ranjith')) return "Ranjith's Acc";
-  return type;
+const getAccountPartnerName = (acc) => {
+  if (!acc) return '';
+  const name = (acc.accountName || '').toLowerCase();
+  const type = (acc.accountType || '').toLowerCase();
+  if (name.includes('pandiyan') || name.includes('pandian') || type.includes('pandiyan') || type === 'cash') return 'Pandiyan';
+  if (name.includes('ranjith') || type.includes('ranjith') || type === 'bank') return 'Ranjith';
+  return acc.accountName || acc.accountType || 'Partner';
+};
+
+const formatAccountType = (type, accountName = '') => {
+  const name = (accountName || '').toLowerCase();
+  const t = (type || '').toLowerCase();
+  if (name.includes('pandiyan') || name.includes('pandian') || t.includes('pandiyan') || t === 'cash') {
+    return type && type !== 'CASH' && type !== 'PANDIYAN' ? `Pandiyan (${type})` : "Pandiyan's Acc";
+  }
+  if (name.includes('ranjith') || t.includes('ranjith') || t === 'bank') {
+    return type && type !== 'BANK' && type !== 'RANJITH' ? `Ranjith (${type})` : "Ranjith's Acc";
+  }
+  return type || "Business Acc";
 };
 
 const fmt = (val) => `\u20B9${Number(val || 0).toLocaleString('en-IN')}`;
@@ -50,10 +64,24 @@ export default function BusinessAccount() {
   const [investmentSubmitting, setInvestmentSubmitting] = useState(false);
 
   const openInvestmentModal = (partnerId = '', defaultType = 'INVESTMENT', defaultAccount = '') => {
-    const defaultPartnerId = partnerId || (partners.length > 0 ? partners[0].partnerId : '');
+    let selectedPartnerId = partnerId;
+    if (!selectedPartnerId) {
+      if (defaultAccount) {
+        const found = partners.find(p => {
+          const pName = (p.partnerName || '').toLowerCase();
+          const accLower = defaultAccount.toLowerCase();
+          return pName && (accLower.includes(pName) || pName.includes(accLower));
+        });
+        if (found) selectedPartnerId = found.partnerId;
+      }
+      if (!selectedPartnerId && partners.length > 0) {
+        selectedPartnerId = partners[0].partnerId;
+      }
+    }
+
     const defaultAcc = defaultAccount || (accounts.length > 0 ? accounts[0].accountName : 'Cash');
     setInvestmentForm({
-      partnerId: defaultPartnerId,
+      partnerId: selectedPartnerId,
       transactionType: defaultType,
       amount: '',
       description: defaultType === 'INVESTMENT' ? 'Capital Investment' : 'Partner Withdrawal',
@@ -176,7 +204,7 @@ export default function BusinessAccount() {
 
   const handleEdit = (a) => {
     setEditingId(a.accountId);
-    setForm({ name: a.accountName, type: formatAccountType(a.accountType) });
+    setForm({ name: a.accountName, type: a.accountType || "Pandiyan's Acc" });
     setShowCreateForm(true);
   };
 
@@ -212,6 +240,7 @@ export default function BusinessAccount() {
   // ── Compute per-account (partner) summary ──
   const partnerSummary = accounts.map(acc => {
     const accName = acc.accountName || '';
+    const partnerName = getAccountPartnerName(acc);
     
     // Filter transactions for this account and date range
     const accTx = transactions.filter(t => 
@@ -234,25 +263,40 @@ export default function BusinessAccount() {
       .filter(t => t.transactionType === 'DEBIT' && t.referenceType === 'EXPENSE')
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // Total invested (partner ledger INVESTMENT minus WITHDRAWAL)
-    // Filtered by date range
-    const partnerName = formatAccountType(acc.accountType).replace("'s Acc", '').trim();
-    const accLedgers = ledgers.filter(l => 
-      ((l.partnerName || '').toLowerCase().includes(partnerName.toLowerCase()) || 
-       (l.partnerName || '').toLowerCase().includes(accName.toLowerCase())) &&
-      (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate))
-    );
-    
-    const invested = accLedgers.reduce((sum, l) => {
+    // 1. Direct Account-level Partner Investments & Withdrawals from AccountTransactions
+    const txInvested = accTx
+      .filter(t => (t.referenceType === 'PARTNER_TRANSACTION' || (t.description || '').toLowerCase().includes('investment')) && t.transactionType === 'CREDIT')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const txWithdrawn = accTx
+      .filter(t => (t.referenceType === 'PARTNER_TRANSACTION' || (t.description || '').toLowerCase().includes('withdrawal')) && t.transactionType === 'DEBIT')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const netTxInvested = txInvested - txWithdrawn;
+
+    // 2. Matching PartnerLedger entries (by partner name or account name)
+    const pNameLower = partnerName.toLowerCase();
+    const accNameLower = accName.toLowerCase();
+    const accLedgers = ledgers.filter(l => {
+      const lpName = (l.partnerName || '').toLowerCase();
+      const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
+      const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
+      return (isPartnerMatch || isAccMatch) && (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate));
+    });
+
+    const partnerLedgerInvested = accLedgers.reduce((sum, l) => {
       if (l.transactionType === 'INVESTMENT') return sum + (Number(l.amount) || 0);
       if (l.transactionType === 'WITHDRAWAL') return sum - (Number(l.amount) || 0);
       return sum;
     }, 0);
 
+    // Use direct account transaction if present; fallback to matched partner ledger
+    const invested = netTxInvested !== 0 ? netTxInvested : partnerLedgerInvested;
+
     // Net In-Hand for partner (Invested + Sales Collected - Purchases Paid - Expenses Paid)
     const netInHand = (invested + salesCollected) - purchasesPaid - expensesPaid;
 
-    return { acc, accName, salesCollected, purchasesPaid, expensesPaid, invested, netInHand };
+    return { acc, accName, partnerName, salesCollected, purchasesPaid, expensesPaid, invested, netInHand };
   });
 
   const onPrintCashInHand = () => {
@@ -375,10 +419,15 @@ export default function BusinessAccount() {
             partnerSummary.map((ps, idx) => {
               const col = partnerColors[idx % partnerColors.length];
               const initial = (ps.accName || 'A')[0].toUpperCase();
-              const matchedPartner = partners.find(p => 
-                p.partnerName?.toLowerCase().includes(ps.accName.toLowerCase()) || 
-                (ps.acc.accountType && p.partnerName?.toLowerCase().includes(formatAccountType(ps.acc.accountType).toLowerCase().replace("'s acc", '').trim()))
-              );
+              const matchedPartner = partners.find(p => {
+                const pName = (p.partnerName || '').toLowerCase();
+                const accNameLower = (ps.accName || '').toLowerCase();
+                const partnerNameLower = (ps.partnerName || '').toLowerCase();
+                return (
+                  (pName && (accNameLower.includes(pName) || pName.includes(accNameLower))) ||
+                  (pName && (partnerNameLower.includes(pName) || pName.includes(partnerNameLower)))
+                );
+              }) || (partners.length > 0 ? partners[0] : null);
               return (
                 <div key={ps.acc.accountId} className={`rounded-2xl overflow-hidden shadow-md ring-1 ${col.ring} bg-white flex flex-col justify-between`}>
                   <div>
@@ -390,7 +439,7 @@ export default function BusinessAccount() {
                         </div>
                         <div>
                           <div className="text-white font-black text-sm leading-tight">{ps.accName}</div>
-                          <div className="text-white/70 text-[10px] font-bold">{formatAccountType(ps.acc.accountType)}</div>
+                          <div className="text-white/70 text-[10px] font-bold">{formatAccountType(ps.acc.accountType, ps.accName)}</div>
                         </div>
                       </div>
                       <div className="text-right">
@@ -553,7 +602,7 @@ export default function BusinessAccount() {
                 <tr key={idx} className="hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-black text-slate-900">
                     <div>{ps.accName}</div>
-                    <div className="text-[9px] font-normal text-slate-500">{formatAccountType(ps.acc.accountType)}</div>
+                    <div className="text-[9px] font-normal text-slate-500">{formatAccountType(ps.acc.accountType, ps.accName)}</div>
                   </td>
                   <td className="px-3 py-2.5 text-right font-mono font-bold text-blue-700">{fmt(ps.invested)}</td>
                   <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{fmt(ps.salesCollected)}</td>
@@ -698,7 +747,7 @@ export default function BusinessAccount() {
                     <td className="px-5 py-3 font-bold text-slate-800 text-xs">{a.accountName}</td>
                     <td className="px-5 py-3">
                       <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-md bg-slate-100 text-slate-600 font-mono text-[10px] font-bold">
-                        {formatAccountType(a.accountType)}
+                        {formatAccountType(a.accountType, a.accountName)}
                       </span>
                     </td>
                     <td className="px-5 py-3 text-right print:hidden">
@@ -753,7 +802,7 @@ export default function BusinessAccount() {
                       <div className="flex items-center gap-2">
                         <span className="text-[10px] font-bold text-blue-200 font-mono tracking-wider">ACCT-{a.accountId}</span>
                         <span className="inline-block px-1.5 py-0.5 rounded text-[9px] font-extrabold uppercase bg-white/20 text-white tracking-widest">
-                          {formatAccountType(a.accountType)}
+                          {formatAccountType(a.accountType, a.accountName)}
                         </span>
                       </div>
                     </div>
@@ -962,7 +1011,7 @@ export default function BusinessAccount() {
                   <option value="">-- Choose Account --</option>
                   {accounts.map(a => (
                     <option key={a.accountId} value={a.accountName}>
-                      {a.accountName} ({formatAccountType(a.accountType)})
+                      {a.accountName} ({formatAccountType(a.accountType, a.accountName)})
                     </option>
                   ))}
                 </select>
