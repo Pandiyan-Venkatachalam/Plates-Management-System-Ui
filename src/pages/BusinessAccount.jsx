@@ -3,7 +3,7 @@ import { useAuth } from '../context/AuthContext';
 import { Plus, Trash2, Search, ChevronRight, Pencil, Users, TrendingUp, Wallet, ArrowDownCircle, ArrowUpCircle, RefreshCw, CalendarDays, ShoppingBag } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
-import { sortLatestFirst } from '../utils/sortHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
 import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
 import DateInput from '../components/DateInput';
 
@@ -274,24 +274,26 @@ export default function BusinessAccount() {
 
     const netTxInvested = txInvested - txWithdrawn;
 
-    // 2. Matching PartnerLedger entries (by partner name or account name)
+    // 2. Check for any unlinked PartnerLedger entries not already in accTx
     const pNameLower = partnerName.toLowerCase();
     const accNameLower = accName.toLowerCase();
-    const accLedgers = ledgers.filter(l => {
+    const existingRefIds = new Set(accTx.filter(t => t.referenceType === 'PARTNER_TRANSACTION').map(t => t.referenceId));
+
+    const unlinkedLedgers = ledgers.filter(l => {
       const lpName = (l.partnerName || '').toLowerCase();
       const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
       const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
-      return (isPartnerMatch || isAccMatch) && (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate));
+      const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !accTx.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
+      return (isPartnerMatch || isAccMatch) && notInTx && (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate));
     });
 
-    const partnerLedgerInvested = accLedgers.reduce((sum, l) => {
+    const unlinkedLedgerInvested = unlinkedLedgers.reduce((sum, l) => {
       if (l.transactionType === 'INVESTMENT') return sum + (Number(l.amount) || 0);
       if (l.transactionType === 'WITHDRAWAL') return sum - (Number(l.amount) || 0);
       return sum;
     }, 0);
 
-    // Use direct account transaction if present; fallback to matched partner ledger
-    const invested = netTxInvested !== 0 ? netTxInvested : partnerLedgerInvested;
+    const invested = netTxInvested + unlinkedLedgerInvested;
 
     // Net In-Hand for partner (Invested + Sales Collected - Purchases Paid - Expenses Paid)
     const netInHand = (invested + salesCollected) - purchasesPaid - expensesPaid;

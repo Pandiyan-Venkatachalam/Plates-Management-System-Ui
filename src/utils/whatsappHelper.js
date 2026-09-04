@@ -146,7 +146,18 @@ export const sendWhatsAppNotificationToPartners = async (apiRequest, { message, 
         message,
         performedBy: performedBy || 'Admin'
       })
-    }).catch(err => console.warn('Activity record warning:', err));
+    })
+    .then(() => {
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
+      }
+    })
+    .catch(err => {
+      console.warn('Activity record warning:', err);
+      if (typeof window !== 'undefined') {
+        window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
+      }
+    });
 
   } catch (e) {
     console.error('Error in sendWhatsAppNotificationToPartners', e);

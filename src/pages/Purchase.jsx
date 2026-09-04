@@ -184,9 +184,13 @@ export default function Purchase() {
               unitCost: parseFloat(i.unitCost)
             })),
             totalAmount: totalCost,
-            paidAmount: parseFloat(paidAmount),
-            paymentStatus: parseFloat(paidAmount) >= totalCost ? 'PAID' : parseFloat(paidAmount) > 0 ? 'PARTIAL' : 'UNPAID',
-            status: 'COMPLETED'
+            paidAmount: paidNum,
+            paymentStatus: paidNum >= totalCost ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'UNPAID',
+            status: 'COMPLETED',
+            paymentMethodAccountName: accountName,
+            paymentContributions: isSplitPayment 
+              ? paymentContributions.map(c => ({ accountName: c.accountName, amount: parseFloat(c.amount) || 0 }))
+              : (paidNum > 0 ? [{ accountName, amount: paidNum }] : [])
           })
         });
         markItemAsUpdated('purchase', editingId);
@@ -196,8 +200,8 @@ export default function Purchase() {
           purchaseId: editingId,
           supplierName,
           totalAmount: totalCost,
-          paidAmount: parseFloat(paidAmount),
-          balanceAmount: Math.max(0, totalCost - parseFloat(paidAmount)),
+          paidAmount: paidNum,
+          balanceAmount: Math.max(0, totalCost - paidNum),
           handledBy: 'Admin'
         });
         sendWhatsAppNotificationToPartners(apiRequest, {
@@ -222,8 +226,8 @@ export default function Purchase() {
           purchaseId: createdPurchaseId,
           supplierName,
           totalAmount: totalCost,
-          paidAmount: parseFloat(paidAmount),
-          balanceAmount: Math.max(0, totalCost - parseFloat(paidAmount)),
+          paidAmount: paidNum,
+          balanceAmount: Math.max(0, totalCost - paidNum),
           handledBy: 'Admin'
         });
         sendWhatsAppNotificationToPartners(apiRequest, {
@@ -253,7 +257,11 @@ export default function Purchase() {
     setEditingId(p.purchaseId);
     setEditingPurchaseDate(p.purchaseDate);
     setSupplierId(p.supplierId ? String(p.supplierId) : '');
-    setPaidAmount(p.paidAmount);
+    setPaidAmount(p.paidAmount || 0);
+    const matchedAcc = p.paymentMethodAccountName || p.accountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash');
+    setAccountName(matchedAcc);
+    setIsSplitPayment(false);
+    setPaymentContributions([]);
     setItems(p.details && p.details.length > 0 ? p.details.map(d => ({
       productId: d.productId ? String(d.productId) : '',
       quantity: d.quantity,
@@ -620,7 +628,14 @@ export default function Purchase() {
                       </div>
                     </td>
                     <td className="px-3 py-2 text-right font-black text-slate-900 text-xs whitespace-nowrap">{money(p.totalAmount)}</td>
-                    <td className="px-3 py-2 text-right font-bold text-slate-600 text-xs whitespace-nowrap">{money(p.paidAmount)}</td>
+                    <td className="px-3 py-2 text-right whitespace-nowrap">
+                      <span className="font-bold text-slate-600 text-xs block">{money(p.paidAmount)}</span>
+                      {p.paidAmount > 0 && (p.paymentMethodAccountName || p.accountName) && (
+                        <span className="inline-block text-[9px] font-bold text-slate-400 font-mono">
+                          {p.paymentMethodAccountName || p.accountName}
+                        </span>
+                      )}
+                    </td>
                     <td className={`px-3 py-2 text-right font-black text-xs whitespace-nowrap ${p.balanceAmount > 0 ? "text-rose-500" : "text-emerald-500"}`}>
                       {money(p.balanceAmount)}
                     </td>
@@ -730,6 +745,11 @@ export default function Purchase() {
                   <div className="border-l border-slate-100 pl-3">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Paid</p>
                     <p className="mt-0.5 text-sm font-bold text-slate-600">{money(invoice.paidAmount)}</p>
+                    {invoice.paidAmount > 0 && (invoice.paymentMethodAccountName || invoice.accountName) && (
+                      <span className="block text-[8px] font-bold text-slate-400 font-mono">
+                        {invoice.paymentMethodAccountName || invoice.accountName}
+                      </span>
+                    )}
                   </div>
                   <div className="border-l border-slate-100 pl-3">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Balance</p>

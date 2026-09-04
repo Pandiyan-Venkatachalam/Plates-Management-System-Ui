@@ -9,12 +9,19 @@ const getEditedTimestamps = (entityKey) => {
   }
 };
 
+export const notifyActivityUpdate = (detail = {}) => {
+  if (typeof window !== 'undefined') {
+    window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail }));
+  }
+};
+
 export const markItemAsUpdated = (entityKey, id) => {
   if (!entityKey || id === undefined || id === null) return;
   try {
     const current = getEditedTimestamps(entityKey);
     current[String(id)] = Date.now();
     sessionStorage.setItem(`vpms_edited_${entityKey}`, JSON.stringify(current));
+    notifyActivityUpdate({ entityKey, id });
   } catch (e) {
     console.error('Error recording updated item', e);
   }

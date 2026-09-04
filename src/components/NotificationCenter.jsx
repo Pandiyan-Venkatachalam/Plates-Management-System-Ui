@@ -104,7 +104,12 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
 
   const toggleOpen = () => {
     updatePosition();
-    setIsOpen(o => !o);
+    setIsOpen(o => {
+      if (!o) {
+        setTimeout(fetchNotifications, 50);
+      }
+      return !o;
+    });
   };
 
   const fetchNotifications = async () => {
@@ -165,7 +170,14 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
   useEffect(() => {
     fetchNotifications();
     const interval = setInterval(fetchNotifications, 20000);
-    return () => clearInterval(interval);
+    const handleImmediateUpdate = () => {
+      fetchNotifications();
+    };
+    window.addEventListener('vpms_activity_update', handleImmediateUpdate);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener('vpms_activity_update', handleImmediateUpdate);
+    };
   }, []);
 
   useEffect(() => {
