@@ -11,19 +11,19 @@ const getAccountPartnerName = (acc) => {
   if (!acc) return '';
   const name = (acc.accountName || '').toLowerCase();
   const type = (acc.accountType || '').toLowerCase();
-  if (name.includes('pandiyan') || name.includes('pandian') || type.includes('pandiyan') || type === 'cash') return 'Pandiyan';
-  if (name.includes('ranjith') || type.includes('ranjith') || type === 'bank') return 'Ranjith';
+  if (name.includes('pandiyan') || name.includes('pandian') || type.includes('pandiyan') || type.includes('pandian')) return 'Pandiyan';
+  if (name.includes('ranjith') || type.includes('ranjith')) return 'Ranjith';
   return acc.accountName || acc.accountType || 'Partner';
 };
 
 const formatAccountType = (type, accountName = '') => {
   const name = (accountName || '').toLowerCase();
   const t = (type || '').toLowerCase();
-  if (name.includes('pandiyan') || name.includes('pandian') || t.includes('pandiyan') || t === 'cash') {
-    return type && type !== 'CASH' && type !== 'PANDIYAN' ? `Pandiyan (${type})` : "Pandiyan's Acc";
+  if (name.includes('pandiyan') || name.includes('pandian') || t.includes('pandiyan') || t.includes('pandian')) {
+    return "Pandiyan's Acc";
   }
-  if (name.includes('ranjith') || t.includes('ranjith') || t === 'bank') {
-    return type && type !== 'BANK' && type !== 'RANJITH' ? `Ranjith (${type})` : "Ranjith's Acc";
+  if (name.includes('ranjith') || t.includes('ranjith')) {
+    return "Ranjith's Acc";
   }
   return type || "Business Acc";
 };
@@ -691,7 +691,7 @@ export default function BusinessAccount() {
             <button 
               onClick={() => {
                 setEditingId(null);
-                setForm({ name: '', type: 'CASH' });
+                setForm({ name: '', type: "Pandiyan's Acc" });
                 setShowCreateForm(true);
               }}
               className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
