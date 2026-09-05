@@ -83,16 +83,11 @@ export default function Dashboard({ onTabSelect }) {
           // Directly use Variant Name from database
           label = vName || pName || 'Standard';
 
-          const isSquare = label.toLowerCase().includes('square');
           const numMatch = label.match(/\d+/);
           const num = numMatch ? numMatch[0] : '';
 
-          if (num && isSquare) {
-            badge = `${num}" Sq`;
-          } else if (num) {
+          if (num) {
             badge = `${num}"`;
-          } else if (isSquare) {
-            badge = `Sq`;
           } else {
             badge = label.length > 5 ? label.slice(0, 4) : label;
           }
@@ -289,7 +284,7 @@ export default function Dashboard({ onTabSelect }) {
         </div>
 
         {/* ── Plate Size Cards (8", 10", 10" Square, 12", etc.) — Green gradient like P&L green card ── */}
-        {plateSizeBreakdown.map(({ label, qty, amount }, idx) => {
+        {plateSizeBreakdown.map(({ label, badge, qty, amount }, idx) => {
           return (
             <div
               key={`plate-${idx}`}
@@ -299,8 +294,8 @@ export default function Dashboard({ onTabSelect }) {
             >
               <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-white/10 rounded-full transition-transform group-hover:scale-150" />
               <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
-                <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
-                  <Leaf size={13} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
+                <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white font-black text-[10px] sm:text-xs">
+                  {badge}
                 </div>
                 <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight truncate">{label}</p>
               </div>
