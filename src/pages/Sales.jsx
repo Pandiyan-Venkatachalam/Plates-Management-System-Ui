@@ -871,7 +871,10 @@ export default function Sales() {
                   customers={customers}
                   value={customerId}
                   onChange={(cId) => setCustomerId(cId)}
-                  placeholder="Search customer name or phone..."
+                  onCustomerCreated={(newCust) => {
+                    setCustomers(prev => sortLatestFirst([newCust, ...prev], ['customerId', 'id'], 'customer'));
+                  }}
+                  placeholder="Search or type customer name to add..."
                   required
                 />
               </div>

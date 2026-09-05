@@ -16,7 +16,8 @@ import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMM
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import DateInput from '../components/DateInput';
 
-const fmt = (val) => `\u20B9${Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const fmt = (val) => `₹${Number(val || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+const money = (val) => `₹${Number(val || 0).toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 export default function SalesOrder({ onNavigateToSale }) {
   const { apiRequest } = useAuth();
@@ -71,6 +72,11 @@ export default function SalesOrder({ onNavigateToSale }) {
   useEffect(() => {
     loadData();
   }, []);
+
+  const getProductSizeStr = (productId) => {
+    const prod = products.find(p => p.productId === productId);
+    return prod ? (prod.variantName || prod.productName) : '';
+  };
 
   const openCreateModal = () => {
     setEditingId(null);
@@ -660,7 +666,7 @@ export default function SalesOrder({ onNavigateToSale }) {
       </section>
 
       {/* =========================================================
-          MOBILE ORDER CARDS
+          MOBILE ORDER CARDS (Sales Ledger Style)
       ========================================================= */}
       <section className="space-y-4 lg:hidden pb-10 print:hidden">
         <div className="flex items-center justify-between px-1">
@@ -697,19 +703,21 @@ export default function SalesOrder({ onNavigateToSale }) {
                           ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
                           : "bg-amber-500/20 text-amber-300 border-amber-500/30"
                   }`}>
-                    {o.status}
+                    {o.status === 'CONVERTED' ? 'Converted' : o.status === 'CONFIRMED' ? 'Confirmed' : o.status === 'CANCELLED' ? 'Cancelled' : 'Draft'}
                   </span>
                 </div>
 
-                {/* Financial Summary */}
+                {/* Financial & Delivery Summary */}
                 <div className="grid grid-cols-3 gap-2 px-4 py-3.5 bg-white">
                   <div>
                     <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total Value</p>
                     <p className="mt-0.5 text-sm font-black text-slate-900 font-mono">{fmt(o.totalAmount)}</p>
                   </div>
                   <div className="border-l border-slate-100 pl-3">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Items</p>
-                    <p className="mt-0.5 text-sm font-bold text-slate-700">{o.totalItems || o.details?.length || 0} Plates</p>
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Priority</p>
+                    <p className={`mt-0.5 text-xs font-bold uppercase ${
+                      o.priority === 'URGENT' ? 'text-rose-600' : o.priority === 'HIGH' ? 'text-amber-600' : 'text-slate-700'
+                    }`}>{o.priority || 'Normal'}</p>
                   </div>
                   <div className="border-l border-slate-100 pl-3">
                     <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Delivery</p>
@@ -717,48 +725,85 @@ export default function SalesOrder({ onNavigateToSale }) {
                   </div>
                 </div>
 
-                {/* Actions & Status Toolbar */}
-                <div className="flex items-center justify-between px-4 py-2.5 bg-slate-50/70 border-t border-slate-100 mt-auto">
-                  {o.status !== 'CONVERTED' ? (
-                    <button
-                      onClick={() => openConvertModal(o)}
-                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white text-[11px] font-bold shadow-sm hover:shadow-md transition active:scale-95"
-                    >
-                      <Sparkles size={12} />
-                      <span>Convert Sale</span>
-                    </button>
-                  ) : (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-lg border border-emerald-200">
-                      ✓ Finalized Sale
-                    </span>
-                  )}
-                  <div className="flex items-center gap-1">
-                    <button
-                      onClick={() => setViewOrder(o)}
-                      className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-brand-accent transition-all hover:shadow-sm"
-                      title="View Details"
-                    >
-                      <Eye size={13} />
-                    </button>
-                    {o.status !== 'CONVERTED' && (
-                      <button
-                        onClick={() => handleEdit(o)}
-                        className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-blue-500 transition-all hover:shadow-sm"
-                        title="Edit Order"
-                      >
-                        <Pencil size={13} />
-                      </button>
-                    )}
-                    {o.status !== 'CONVERTED' && (
-                      <button
-                        onClick={() => handleDelete(o.orderId)}
-                        className="p-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-100 text-slate-400 hover:text-rose-500 transition-all hover:shadow-sm"
-                        title="Delete Order"
-                      >
-                        <Trash2 size={13} />
-                      </button>
+                {/* Items Summary (Sales Ledger Style) */}
+                <div className="mx-4 mb-3.5 rounded-xl bg-slate-50 border border-slate-100 p-3">
+                  <div className="flex items-center justify-between mb-2">
+                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Order Items</p>
+                    <p className="text-[9px] font-bold text-slate-500">
+                      {o.details?.reduce((sum, d) => sum + (Number(d.orderedQuantity) || Number(d.quantity) || 0), 0) || o.totalItems || 0} Total Qty
+                    </p>
+                  </div>
+                  <div className="space-y-1.5">
+                    {o.details && o.details.length > 0 ? (
+                      o.details.map((d, idx) => {
+                        const sizeStr = getProductSizeStr(d.productId);
+                        const qty = Number(d.orderedQuantity) || Number(d.quantity) || 0;
+                        const price = Number(d.sellingPrice) || Number(d.unitPrice) || 0;
+                        const plateName = sizeStr 
+                          ? `${sizeStr.replace(/[^0-9]/g, '')}" Areca Plate` 
+                          : (d.productName || 'Areca Plate');
+                        return (
+                          <div key={idx} className="flex items-center justify-between text-[11px]">
+                            <span className="font-bold text-slate-700">{plateName}</span>
+                            <div className="flex items-center gap-3">
+                              <span className="text-slate-400 font-medium">{qty} pcs</span>
+                              <span className="font-bold text-slate-800">{fmt(qty * price)}</span>
+                            </div>
+                          </div>
+                        );
+                      })
+                    ) : (
+                      <div className="text-[11px] text-slate-400 italic">No item details recorded</div>
                     )}
                   </div>
+                </div>
+
+                {/* Actions (Sales Ledger Style 4-Column Grid) */}
+                <div className="grid grid-cols-4 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
+                  <button 
+                    onClick={() => setViewOrder(o)}
+                    className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-brand-accent hover:bg-blue-50/50 transition-colors"
+                  >
+                    <Eye size={15} />
+                    <span className="text-[9px] font-bold">View</span>
+                  </button>
+                  
+                  <button 
+                    onClick={() => handleEdit(o)}
+                    disabled={o.status === 'CONVERTED'}
+                    className={`flex flex-col items-center justify-center gap-1 py-3 text-slate-500 transition-colors ${
+                      o.status === 'CONVERTED' ? 'opacity-40 cursor-not-allowed' : 'hover:text-blue-600 hover:bg-blue-50/50'
+                    }`}
+                  >
+                    <Pencil size={15} />
+                    <span className="text-[9px] font-bold">Edit</span>
+                  </button>
+
+                  <button 
+                    onClick={() => handleDelete(o.orderId)}
+                    disabled={o.status === 'CONVERTED'}
+                    className={`flex flex-col items-center justify-center gap-1 py-3 text-slate-500 transition-colors ${
+                      o.status === 'CONVERTED' ? 'opacity-40 cursor-not-allowed' : 'hover:text-rose-600 hover:bg-rose-50/50'
+                    }`}
+                  >
+                    <Trash2 size={15} />
+                    <span className="text-[9px] font-bold">Delete</span>
+                  </button>
+
+                  {o.status !== 'CONVERTED' ? (
+                    <button 
+                      onClick={() => openConvertModal(o)}
+                      className="flex flex-col items-center justify-center gap-1 py-3 bg-emerald-500/10 text-emerald-600 hover:bg-emerald-600 hover:text-white transition-colors"
+                    >
+                      <Sparkles size={15} />
+                      <span className="text-[9px] font-bold">Convert</span>
+                    </button>
+                  ) : (
+                    <div className="flex flex-col items-center justify-center gap-1 py-3 text-emerald-600 bg-emerald-50/50">
+                      <CheckCircle2 size={15} />
+                      <span className="text-[9px] font-bold">Converted</span>
+                    </div>
+                  )}
                 </div>
               </div>
             </article>
@@ -795,7 +840,10 @@ export default function SalesOrder({ onNavigateToSale }) {
                   customers={customers}
                   value={form.customerId}
                   onChange={(cId) => setForm({ ...form, customerId: cId })}
-                  placeholder="Search customer name or phone..."
+                  onCustomerCreated={(newCust) => {
+                    setCustomers(prev => sortLatestFirst([newCust, ...prev], ['customerId', 'id'], 'customer'));
+                  }}
+                  placeholder="Search or type customer name to add..."
                   required
                 />
               </div>

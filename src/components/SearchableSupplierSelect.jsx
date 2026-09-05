@@ -1,14 +1,14 @@
 import React, { useState, useRef, useEffect, useMemo } from 'react';
-import { Search, ChevronDown, Check, X, User, Plus } from 'lucide-react';
+import { Search, ChevronDown, Check, X, Truck, Plus } from 'lucide-react';
 import { useAuth } from '../context/AuthContext';
 import Swal from 'sweetalert2';
 
-export default function SearchableCustomerSelect({
-  customers = [],
+export default function SearchableSupplierSelect({
+  suppliers = [],
   value = '',
   onChange,
-  onCustomerCreated,
-  placeholder = 'Search or Select Customer...',
+  onSupplierCreated,
+  placeholder = 'Search or Select Supplier...',
   required = false,
   className = ''
 }) {
@@ -19,35 +19,35 @@ export default function SearchableCustomerSelect({
   const containerRef = useRef(null);
   const searchInputRef = useRef(null);
 
-  // Alphabetically sorted customers
-  const sortedCustomers = useMemo(() => {
-    return [...customers].sort((a, b) =>
-      (a.customerName || '').localeCompare(b.customerName || '', undefined, { sensitivity: 'base' })
+  // Alphabetically sorted suppliers
+  const sortedSuppliers = useMemo(() => {
+    return [...suppliers].sort((a, b) =>
+      (a.supplierName || '').localeCompare(b.supplierName || '', undefined, { sensitivity: 'base' })
     );
-  }, [customers]);
+  }, [suppliers]);
 
-  // Real-time filtered customers
-  const filteredCustomers = useMemo(() => {
-    if (!searchTerm.trim()) return sortedCustomers;
+  // Real-time filtered suppliers
+  const filteredSuppliers = useMemo(() => {
+    if (!searchTerm.trim()) return sortedSuppliers;
     const q = searchTerm.toLowerCase().trim();
-    return sortedCustomers.filter(c =>
-      (c.customerName && c.customerName.toLowerCase().includes(q)) ||
-      (c.phone && c.phone.toLowerCase().includes(q)) ||
-      (c.address && c.address.toLowerCase().includes(q))
+    return sortedSuppliers.filter(s =>
+      (s.supplierName && s.supplierName.toLowerCase().includes(q)) ||
+      (s.contactPerson && s.contactPerson.toLowerCase().includes(q)) ||
+      (s.phone && s.phone.toLowerCase().includes(q))
     );
-  }, [sortedCustomers, searchTerm]);
+  }, [sortedSuppliers, searchTerm]);
 
-  // Check if current search term has an exact customer name match
+  // Check if current search term has an exact supplier name match
   const hasExactMatch = useMemo(() => {
     if (!searchTerm.trim()) return true;
     const q = searchTerm.toLowerCase().trim();
-    return customers.some(c => (c.customerName || '').toLowerCase().trim() === q);
-  }, [customers, searchTerm]);
+    return suppliers.some(s => (s.supplierName || '').toLowerCase().trim() === q);
+  }, [suppliers, searchTerm]);
 
-  // Current selected customer
-  const selectedCustomer = useMemo(() => {
-    return customers.find(c => String(c.customerId) === String(value));
-  }, [customers, value]);
+  // Current selected supplier
+  const selectedSupplier = useMemo(() => {
+    return suppliers.find(s => String(s.supplierId) === String(value));
+  }, [suppliers, value]);
 
   // Click outside to close
   useEffect(() => {
@@ -75,8 +75,8 @@ export default function SearchableCustomerSelect({
     }
   }, [isOpen]);
 
-  const handleSelect = (cId) => {
-    onChange(cId);
+  const handleSelect = (sId) => {
+    onChange(sId);
     setIsOpen(false);
     setSearchTerm('');
   };
@@ -94,29 +94,30 @@ export default function SearchableCustomerSelect({
 
     try {
       setCreating(true);
-      const res = await apiRequest('/customer/create-customer', {
+      const res = await apiRequest('/supplier/create-supplier', {
         method: 'POST',
         body: JSON.stringify({
-          customerName: nameToCreate,
+          supplierName: nameToCreate,
+          contactPerson: '',
           phone: '',
           email: '',
           address: ''
         })
       });
 
-      const newCustomer = res.data;
-      if (onCustomerCreated) {
-        onCustomerCreated(newCustomer);
+      const newSupplier = res.data;
+      if (onSupplierCreated) {
+        onSupplierCreated(newSupplier);
       }
-      if (newCustomer?.customerId) {
-        onChange(newCustomer.customerId);
+      if (newSupplier?.supplierId) {
+        onChange(newSupplier.supplierId);
       }
 
       setIsOpen(false);
       setSearchTerm('');
     } catch (err) {
       console.error(err);
-      Swal.fire('Error', err.message || 'Failed to add customer', 'error');
+      Swal.fire('Error', err.message || 'Failed to add supplier', 'error');
     } finally {
       setCreating(false);
     }
@@ -147,15 +148,15 @@ export default function SearchableCustomerSelect({
         } rounded-xl px-3.5 py-2.5 flex items-center justify-between gap-2 cursor-pointer transition-all select-none shadow-sm`}
       >
         <div className="flex items-center gap-2 min-w-0 flex-1">
-          <User size={15} className={`shrink-0 ${selectedCustomer ? 'text-brand-accent' : 'text-slate-400'}`} />
-          {selectedCustomer ? (
+          <Truck size={15} className={`shrink-0 ${selectedSupplier ? 'text-brand-accent' : 'text-slate-400'}`} />
+          {selectedSupplier ? (
             <div className="flex items-center gap-2 truncate">
               <span className="text-sm font-bold text-slate-900 truncate">
-                {selectedCustomer.customerName}
+                {selectedSupplier.supplierName}
               </span>
-              {selectedCustomer.phone && (
+              {selectedSupplier.phone && (
                 <span className="shrink-0 text-[10px] font-mono font-bold bg-blue-50 text-blue-700 px-1.5 py-0.5 rounded-md border border-blue-100">
-                  {selectedCustomer.phone}
+                  {selectedSupplier.phone}
                 </span>
               )}
             </div>
@@ -167,12 +168,12 @@ export default function SearchableCustomerSelect({
         </div>
 
         <div className="flex items-center gap-1 shrink-0">
-          {selectedCustomer && (
+          {selectedSupplier && (
             <button
               type="button"
               onClick={handleClear}
               className="p-1 text-slate-400 hover:text-rose-500 hover:bg-rose-50 rounded-full transition-colors"
-              title="Clear customer"
+              title="Clear supplier"
             >
               <X size={13} />
             </button>
@@ -196,7 +197,7 @@ export default function SearchableCustomerSelect({
                 type="text"
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search or type customer name..."
+                placeholder="Search or type supplier name..."
                 className="w-full bg-slate-50 border border-slate-200 rounded-xl pl-8 pr-8 py-1.5 text-xs sm:text-sm text-slate-900 font-bold placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent transition-all"
               />
               {searchTerm && (
@@ -233,19 +234,19 @@ export default function SearchableCustomerSelect({
             </div>
           )}
 
-          {/* Customer Items List */}
+          {/* Supplier Items List */}
           <div className="max-h-56 sm:max-h-64 overflow-y-auto divide-y divide-slate-100/60 p-1">
-            {filteredCustomers.length === 0 ? (
+            {filteredSuppliers.length === 0 ? (
               <div className="py-6 text-center text-xs text-slate-400 font-medium">
-                No customer matching "{searchTerm}"
+                No supplier matching "{searchTerm}"
               </div>
             ) : (
-              filteredCustomers.map((c) => {
-                const isSelected = String(c.customerId) === String(value);
+              filteredSuppliers.map((s) => {
+                const isSelected = String(s.supplierId) === String(value);
                 return (
                   <div
-                    key={c.customerId}
-                    onClick={() => handleSelect(c.customerId)}
+                    key={s.supplierId}
+                    onClick={() => handleSelect(s.supplierId)}
                     className={`px-3 py-2.5 rounded-xl cursor-pointer flex items-center justify-between gap-2 transition-all ${
                       isSelected
                         ? 'bg-blue-500/10 text-brand-accent font-black'
@@ -254,11 +255,11 @@ export default function SearchableCustomerSelect({
                   >
                     <div className="flex flex-col min-w-0">
                       <span className="text-xs sm:text-sm font-bold truncate">
-                        {c.customerName}
+                        {s.supplierName}
                       </span>
-                      {c.phone && (
+                      {s.phone && (
                         <span className="text-[10px] text-slate-500 font-mono">
-                          📞 {c.phone}
+                          📞 {s.phone}
                         </span>
                       )}
                     </div>

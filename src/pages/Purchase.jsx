@@ -13,6 +13,7 @@ import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
 import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
 import { sendWhatsAppNotificationToPartners, createPurchaseWhatsAppMessage } from '../utils/whatsappHelper';
 import DateInput from '../components/DateInput';
+import SearchableSupplierSelect from '../components/SearchableSupplierSelect';
 
 export default function Purchase() {
   const { apiRequest } = useAuth();
@@ -835,15 +836,16 @@ export default function Purchase() {
             <form onSubmit={handleSubmit} className="space-y-4">
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Supplier</label>
-                <select
+                <SearchableSupplierSelect
+                  suppliers={suppliers}
                   value={supplierId}
-                  onChange={(e) => setSupplierId(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold focus:outline-none transition-all"
+                  onChange={(val) => setSupplierId(val)}
+                  onSupplierCreated={(newSupp) => {
+                    setSuppliers(prev => sortLatestFirst([newSupp, ...prev], ['supplierId', 'id'], 'supplier'));
+                  }}
+                  placeholder="Search or type supplier name to add..."
                   required
-                >
-                  <option value="">Select Supplier</option>
-                  {suppliers.map(s => <option key={s.supplierId} value={s.supplierId}>{s.supplierName}</option>)}
-                </select>
+                />
               </div>
 
               <div className="space-y-3 pt-2">
