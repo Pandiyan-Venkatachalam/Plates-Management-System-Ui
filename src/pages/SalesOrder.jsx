@@ -24,11 +24,13 @@ export default function SalesOrder({ onNavigateToSale }) {
   const [orders, setOrders] = useState([]);
   const [customers, setCustomers] = useState([]);
   const [products, setProducts] = useState([]);
+  const [batches, setBatches] = useState([]);
   const [accounts, setAccounts] = useState([]);
   
   // Selected Order for View Modal or Convert Modal
   const [viewOrder, setViewOrder] = useState(null);
   const [convertModalOrder, setConvertModalOrder] = useState(null);
+  const [convertAllocations, setConvertAllocations] = useState([]);
   const [convertPaidAmount, setConvertPaidAmount] = useState(0);
   const [convertAccountName, setConvertAccountName] = useState('Cash');
   const [converting, setConverting] = useState(false);
@@ -60,6 +62,7 @@ export default function SalesOrder({ onNavigateToSale }) {
     apiRequest('/order').then(res => setOrders(sortLatestFirst(res.data, ['orderId', 'id'], 'order'))).catch(console.error);
     apiRequest('/customer').then(res => setCustomers(sortLatestFirst(res.data, ['customerId', 'id'], 'customer'))).catch(console.error);
     apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
+    apiRequest('/batch').then(res => setBatches(res.data || [])).catch(console.error);
     apiRequest('/account').then(res => {
       const accs = Array.isArray(res.data) ? res.data : [];
       setAccounts(accs);
@@ -226,18 +229,46 @@ export default function SalesOrder({ onNavigateToSale }) {
     if (accounts.length > 0 && !convertAccountName) {
       setConvertAccountName(accounts[0].accountName);
     }
+    const initialAllocations = order.details ? order.details.map(d => {
+      const availBatches = batches.filter(b => b.productId === d.productId && b.currentQuantity > 0);
+      return {
+        orderDetailId: d.orderDetailId,
+        productId: d.productId,
+        productName: d.productName,
+        quantity: d.orderedQuantity,
+        unitPrice: d.sellingPrice,
+        batchId: availBatches.length === 1 ? String(availBatches[0].batchId) : ''
+      };
+    }) : [];
+    setConvertAllocations(initialAllocations);
   };
 
   const handleConvertToSaleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!convertModalOrder) return;
+
+    for (const alloc of convertAllocations) {
+      if (!alloc.batchId) {
+        const prod = products.find(p => p.productId === alloc.productId);
+        const name = prod ? `${prod.productName} (${prod.variantName})` : (alloc.productName || 'product');
+        Swal.fire('Batch Required', `Please select a Batch (Supplier) for "${name}".`, 'warning');
+        return;
+      }
+    }
+
     setConverting(true);
     try {
       const payload = {
         orderId: convertModalOrder.orderId,
         paidAmount: parseFloat(convertPaidAmount) || 0,
         paymentMethodAccountName: convertAccountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash'),
-        notes: convertModalOrder.notes || ''
+        notes: convertModalOrder.notes || '',
+        itemAllocations: convertAllocations.map(a => ({
+          productId: parseInt(a.productId),
+          quantity: parseInt(a.quantity),
+          unitPrice: parseFloat(a.unitPrice),
+          batchId: parseInt(a.batchId)
+        }))
       };
 
       const res = await apiRequest(`/order/${convertModalOrder.orderId}/convert-to-sale`, {
@@ -1024,6 +1055,60 @@ export default function SalesOrder({ onNavigateToSale }) {
             </div>
 
             <form onSubmit={handleConvertToSaleSubmit} className="space-y-3">
+              {/* Supplier / Batch Selection per Item */}
+              <div className="space-y-2.5 pt-1">
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
+                  Select Batch (Supplier) for Items
+                </label>
+                {convertAllocations.map((alloc, idx) => {
+                  const prod = products.find(p => p.productId === alloc.productId);
+                  const prodTitle = prod ? `${prod.productName} (${prod.variantName})` : (alloc.productName || `Product #${alloc.productId}`);
+                  const availableBatchesForProd = batches.filter(b => b.productId === alloc.productId && (b.currentQuantity > 0 || String(b.batchId) === String(alloc.batchId)));
+
+                  return (
+                    <div key={idx} className="bg-[#fff7f9] border border-slate-200 p-3.5 rounded-xl space-y-2.5 relative shadow-sm">
+                      <div>
+                        <select
+                          value={alloc.productId}
+                          disabled
+                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold opacity-95 cursor-not-allowed"
+                        >
+                          <option value={alloc.productId}>{prodTitle}</option>
+                        </select>
+                      </div>
+                      <div>
+                        <select
+                          value={alloc.batchId}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setConvertAllocations(prev => prev.map((item, i) => i === idx ? { ...item, batchId: val } : item));
+                          }}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium transition-all"
+                          required
+                        >
+                          <option value="">Select Batch (Supplier)</option>
+                          {availableBatchesForProd.map(b => (
+                            <option key={b.batchId} value={b.batchId}>
+                              {b.batchNumber} - {b.supplierName} (Qty: {b.currentQuantity})
+                            </option>
+                          ))}
+                        </select>
+                        {availableBatchesForProd.length === 0 && (
+                          <p className="text-[10px] text-rose-500 font-bold mt-1">
+                            ⚠️ No available stock batches for this product.
+                          </p>
+                        )}
+                      </div>
+                      <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1 pt-0.5">
+                        <span>Qty: {alloc.quantity} pcs</span>
+                        <span>Price: {fmt(alloc.unitPrice)}</span>
+                        <span className="font-black text-slate-900">Total: {fmt(alloc.quantity * alloc.unitPrice)}</span>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+
               <div>
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payment Received (₹)</label>
                 <input
@@ -1053,7 +1138,7 @@ export default function SalesOrder({ onNavigateToSale }) {
               </div>
 
               <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[10px] leading-relaxed">
-                ℹ️ Converting this order will auto-deduct available stock batches and credit <strong>{fmt(convertPaidAmount)}</strong> into <strong>{convertAccountName}</strong>.
+                ℹ️ Converting this order will deduct stock from the selected batch(es) and credit <strong>{fmt(convertPaidAmount)}</strong> into <strong>{convertAccountName}</strong>.
               </div>
 
               <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">

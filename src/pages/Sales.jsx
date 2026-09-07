@@ -313,12 +313,15 @@ export default function Sales() {
     }
   };
 
-  const money = (value) =>
-    new Intl.NumberFormat("en-IN", {
+  const money = (value) => {
+    const num = Number(value || 0);
+    return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
-      maximumFractionDigits: 0,
-    }).format(value);
+      minimumFractionDigits: Number.isInteger(num) ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  };
 
   // Totals calculations
   const totalSalesVal = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
