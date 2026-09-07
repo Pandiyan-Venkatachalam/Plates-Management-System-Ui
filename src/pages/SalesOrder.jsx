@@ -947,24 +947,31 @@ export default function SalesOrder({ onNavigateToSale }) {
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
-                        <input
-                          type="number"
-                          min="1"
-                          value={item.orderedQuantity}
-                          onChange={e => updateItem(idx, 'orderedQuantity', e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
-                          placeholder="Qty"
-                          required
-                        />
-                        <input
-                          type="number"
-                          step="0.01"
-                          value={item.sellingPrice}
-                          onChange={e => updateItem(idx, 'sellingPrice', e.target.value)}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
-                          placeholder="Price (₹)"
-                          required
-                        />
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Price (₹)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={item.sellingPrice}
+                            onChange={e => updateItem(idx, 'sellingPrice', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                            placeholder="e.g. 5.50"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quantity (Pcs)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            min="1"
+                            value={item.orderedQuantity}
+                            onChange={e => updateItem(idx, 'orderedQuantity', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                            placeholder="e.g. 1000"
+                            required
+                          />
+                        </div>
                       </div>
                       <div className="text-right text-[10px] font-mono font-bold text-slate-500 border-t border-slate-100 pt-1">
                         Subtotal: <span className="text-slate-900">{fmt((parseFloat(item.orderedQuantity) || 0) * (parseFloat(item.sellingPrice) || 0))}</span>

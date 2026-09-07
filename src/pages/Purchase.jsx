@@ -881,6 +881,7 @@ export default function Purchase() {
                       <div className="grid grid-cols-2 gap-3">
                         <input
                           type="number"
+                          step="any"
                           value={item.quantity}
                           onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
@@ -889,7 +890,7 @@ export default function Purchase() {
                         />
                         <input
                           type="number"
-                          step="0.01"
+                          step="any"
                           value={item.unitCost}
                           onChange={(e) => updateItem(idx, 'unitCost', e.target.value)}
                           className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
