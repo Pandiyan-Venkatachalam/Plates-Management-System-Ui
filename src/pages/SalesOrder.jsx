@@ -948,18 +948,6 @@ export default function SalesOrder({ onNavigateToSale }) {
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Price (₹)</label>
-                          <input
-                            type="number"
-                            step="any"
-                            value={item.sellingPrice}
-                            onChange={e => updateItem(idx, 'sellingPrice', e.target.value)}
-                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
-                            placeholder="e.g. 5.50"
-                            required
-                          />
-                        </div>
-                        <div>
                           <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quantity (Pcs)</label>
                           <input
                             type="number"
@@ -968,7 +956,19 @@ export default function SalesOrder({ onNavigateToSale }) {
                             value={item.orderedQuantity}
                             onChange={e => updateItem(idx, 'orderedQuantity', e.target.value)}
                             className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
-                            placeholder="e.g. 1000"
+                            placeholder="Qty (e.g. 1000)"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Price (₹)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={item.sellingPrice}
+                            onChange={e => updateItem(idx, 'sellingPrice', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                            placeholder="Price (e.g. 5.50)"
                             required
                           />
                         </div>
