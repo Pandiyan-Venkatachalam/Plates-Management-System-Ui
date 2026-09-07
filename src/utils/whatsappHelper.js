@@ -134,18 +134,6 @@ export const sendWhatsAppNotificationToPartners = async (apiRequest, { message, 
     apiRequest('/notification/broadcast-whatsapp', {
       method: 'POST',
       body: JSON.stringify({ message, eventType: eventType || 'GENERAL' })
-    }).catch(err => console.warn('Silent WhatsApp API broadcast warning:', err));
-
-    // 2. Log activity entry for notification feed
-    apiRequest('/notification/record-activity', {
-      method: 'POST',
-      body: JSON.stringify({
-        category: category || 'GENERAL',
-        actionType: actionType || 'UPDATE',
-        referenceId: String(referenceId || ''),
-        message,
-        performedBy: performedBy || 'Admin'
-      })
     })
     .then(() => {
       if (typeof window !== 'undefined') {
@@ -153,7 +141,7 @@ export const sendWhatsAppNotificationToPartners = async (apiRequest, { message, 
       }
     })
     .catch(err => {
-      console.warn('Activity record warning:', err);
+      console.warn('Silent WhatsApp API broadcast warning:', err);
       if (typeof window !== 'undefined') {
         window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
       }

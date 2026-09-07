@@ -131,16 +131,46 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
 
       let notifData = [];
       if (notifRes?.data && Array.isArray(notifRes.data)) {
-        notifData = notifRes.data.map(a => ({
-          id: a.id || a.auditId,
-          title: a.title || `${a.tableName || 'Activity'} ${a.actionName || 'Update'}`,
-          message: a.message || a.newValues || `${a.actionName || ''} on ${a.tableName || ''} #${a.recordId || ''}`,
-          category: a.category || a.tableName || 'GENERAL',
-          actionType: a.actionType || a.actionName || 'UPDATE',
-          performedBy: a.performedBy || a.username || 'Admin',
-          timestamp: a.timestamp,
-          referenceId: a.referenceId || a.recordId || ''
-        }));
+        const rawItems = notifRes.data
+          .filter(a => {
+            const act = (a.actionName || a.title || '').toUpperCase();
+            const tbl = (a.tableName || a.category || '').toUpperCase();
+            const usr = (a.performedBy || a.username || '').toUpperCase();
+            return !act.startsWith('WHATSAPP_ALERT') && !act.startsWith('WHATSAPP_BROADCAST') && tbl !== 'PARTNERS' && usr !== 'SYSTEM';
+          })
+          .map(a => ({
+            id: a.id || a.auditId,
+            title: a.title || `${a.tableName || 'Activity'} ${a.actionName || 'Update'}`,
+            message: a.message || a.newValues || `${a.actionName || ''} on ${a.tableName || ''} #${a.recordId || ''}`,
+            category: a.category || a.tableName || 'GENERAL',
+            actionType: a.actionType || a.actionName || 'UPDATE',
+            performedBy: a.performedBy || a.username || 'Admin',
+            timestamp: a.timestamp,
+            referenceId: a.referenceId || a.recordId || ''
+          }));
+
+        // Robust deduplication: prevent duplicate notifications for same entity & action
+        const seenKeys = new Map();
+        for (const item of rawItems) {
+          const cat = (item.category || '').toUpperCase();
+          const ref = String(item.referenceId || item.message || '').replace(/[^\d]/g, '');
+          const act = (item.actionType || '').toUpperCase();
+          const itemTime = new Date(item.timestamp || Date.now()).getTime();
+          
+          const dedupeKey = ref ? `${cat}_${ref}_${act}` : `ID_${item.id}`;
+          
+          if (!seenKeys.has(dedupeKey)) {
+            seenKeys.set(dedupeKey, itemTime);
+            notifData.push(item);
+          } else {
+            const lastTime = seenKeys.get(dedupeKey);
+            // Allow if separated by more than 3 minutes (separate real-life update)
+            if (Math.abs(itemTime - lastTime) > 3 * 60 * 1000) {
+              seenKeys.set(dedupeKey, itemTime);
+              notifData.push(item);
+            }
+          }
+        }
       }
       setNotifications(notifData);
 
@@ -353,7 +383,21 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
 
     // Default fallback
     let fallback = raw;
-    if (!fallback || fallback.length < 3) fallback = item.title || 'Operational Update';
+    if (fallback.includes('*VINAYAGA PLATES') || fallback.includes('━━') || fallback.includes('*Invoice No:*') || fallback.includes('*Purchase No:*')) {
+      const custMatch = fallback.match(/\*Customer:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Supplier:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Product:\*\s*([^\n\r*]+)/i);
+      const totalMatch = fallback.match(/\*Total Amount:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Total Cost:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Amount:\*\s*([^\n\r*]+)/i);
+      const dueMatch = fallback.match(/\*Balance Due:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Balance:\*\s*([^\n\r*]+)/i);
+      
+      const parts = [];
+      if (custMatch) parts.push(custMatch[1].trim());
+      if (totalMatch) parts.push(`Total: ${totalMatch[1].trim()}`);
+      if (dueMatch) parts.push(`Due ${dueMatch[1].trim()}`);
+      
+      fallback = parts.length > 0 ? parts.join(' \u2022 ') : (item.title || 'Operational Update');
+    } else if (!fallback || fallback.length < 3) {
+      fallback = item.title || 'Operational Update';
+    }
+
     return {
       title: item.title || 'Activity Alert',
       subtitle: fallback,
