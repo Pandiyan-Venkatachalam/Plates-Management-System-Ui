@@ -225,33 +225,122 @@ export default function SalesOrder({ onNavigateToSale }) {
 
   const openConvertModal = (order) => {
     setConvertModalOrder(order);
-    setConvertPaidAmount(order.totalAmount || 0);
     if (accounts.length > 0 && !convertAccountName) {
       setConvertAccountName(accounts[0].accountName);
     }
-    const initialAllocations = order.details ? order.details.map(d => {
+    const initialAllocations = (order.details && order.details.length > 0) ? order.details.map(d => {
       const availBatches = batches.filter(b => b.productId === d.productId && b.currentQuantity > 0);
       return {
-        orderDetailId: d.orderDetailId,
         productId: d.productId,
-        productName: d.productName,
+        productName: d.productName || getProductSizeStr(d.productId),
         quantity: d.orderedQuantity,
         unitPrice: d.sellingPrice,
         batchId: availBatches.length === 1 ? String(availBatches[0].batchId) : ''
       };
-    }) : [];
+    }) : [{
+      productId: products.length > 0 ? products[0].productId : '',
+      productName: products.length > 0 ? (products[0].variantName || products[0].productName) : '',
+      quantity: 1,
+      unitPrice: products.length > 0 ? (products[0].sellingPrice || 0) : 0,
+      batchId: ''
+    }];
+
+    const initTotal = initialAllocations.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0);
     setConvertAllocations(initialAllocations);
+    setConvertPaidAmount(initTotal || order.totalAmount || 0);
+  };
+
+  const handleAddConvertAllocation = () => {
+    const lastAlloc = convertAllocations[convertAllocations.length - 1];
+    const defaultProdId = lastAlloc?.productId || (products.length > 0 ? products[0].productId : '');
+    const defaultProd = products.find(p => p.productId === parseInt(defaultProdId));
+    const defaultPrice = lastAlloc ? lastAlloc.unitPrice : (defaultProd?.sellingPrice || 0);
+
+    const newAlloc = {
+      productId: defaultProdId,
+      productName: defaultProd ? (defaultProd.variantName || defaultProd.productName) : '',
+      quantity: 100,
+      unitPrice: defaultPrice,
+      batchId: ''
+    };
+
+    setConvertAllocations(prev => {
+      const updated = [...prev, newAlloc];
+      const newTotal = updated.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0);
+      setConvertPaidAmount(newTotal);
+      return updated;
+    });
+  };
+
+  const handleRemoveConvertAllocation = (index) => {
+    if (convertAllocations.length <= 1) return;
+    setConvertAllocations(prev => {
+      const updated = prev.filter((_, i) => i !== index);
+      const newTotal = updated.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0);
+      setConvertPaidAmount(newTotal);
+      return updated;
+    });
+  };
+
+  const handleUpdateConvertAllocation = (index, field, value) => {
+    setConvertAllocations(prev => {
+      const updated = prev.map((item, i) => {
+        if (i !== index) return item;
+        const next = { ...item, [field]: value };
+        if (field === 'productId') {
+          const prod = products.find(p => p.productId === parseInt(value));
+          next.productName = prod ? (prod.variantName || prod.productName) : '';
+          next.batchId = '';
+          if (prod && (next.unitPrice === 0 || !next.unitPrice)) {
+            next.unitPrice = prod.sellingPrice || 0;
+          }
+        }
+        return next;
+      });
+      if (field === 'quantity' || field === 'unitPrice') {
+        const newTotal = updated.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0);
+        setConvertPaidAmount(newTotal);
+      }
+      return updated;
+    });
   };
 
   const handleConvertToSaleSubmit = async (e) => {
     if (e && e.preventDefault) e.preventDefault();
     if (!convertModalOrder) return;
 
-    for (const alloc of convertAllocations) {
+    if (convertAllocations.length === 0) {
+      Swal.fire('No Items', 'Please add at least one item to convert.', 'warning');
+      return;
+    }
+
+    for (let i = 0; i < convertAllocations.length; i++) {
+      const alloc = convertAllocations[i];
+      const prod = products.find(p => p.productId === parseInt(alloc.productId));
+      const prodTitle = prod ? `${prod.productName} (${prod.variantName || 'Standard'})` : (alloc.productName || `Item #${i + 1}`);
+
+      if (!alloc.productId) {
+        Swal.fire('Product Required', `Please select a product for Item #${i + 1}.`, 'warning');
+        return;
+      }
       if (!alloc.batchId) {
-        const prod = products.find(p => p.productId === alloc.productId);
-        const name = prod ? `${prod.productName} (${prod.variantName})` : (alloc.productName || 'product');
-        Swal.fire('Batch Required', `Please select a Batch (Supplier) for "${name}".`, 'warning');
+        Swal.fire('Batch Required', `Please select a Batch (Supplier) for "${prodTitle}" (Item #${i + 1}).`, 'warning');
+        return;
+      }
+      const qty = parseInt(alloc.quantity);
+      if (isNaN(qty) || qty <= 0) {
+        Swal.fire('Invalid Quantity', `Please enter a valid quantity (> 0) for "${prodTitle}" (Item #${i + 1}).`, 'warning');
+        return;
+      }
+      const price = parseFloat(alloc.unitPrice);
+      if (isNaN(price) || price < 0) {
+        Swal.fire('Invalid Price', `Please enter a valid price for "${prodTitle}" (Item #${i + 1}).`, 'warning');
+        return;
+      }
+
+      const selectedBatch = batches.find(b => String(b.batchId) === String(alloc.batchId));
+      if (selectedBatch && qty > selectedBatch.currentQuantity) {
+        Swal.fire('Insufficient Batch Stock', `Batch "${selectedBatch.batchNumber}" only has ${selectedBatch.currentQuantity} pcs in stock, but you entered ${qty} pcs. Please adjust quantity or add another batch.`, 'warning');
         return;
       }
     }
@@ -1026,155 +1115,264 @@ export default function SalesOrder({ onNavigateToSale }) {
           ONE-CLICK CONVERT TO FINALIZED SALE MODAL
       ========================================================= */}
       {convertModalOrder && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
-          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto space-y-4">
-            <div className="flex justify-between items-center border-b border-pink-200/40 pb-3">
-              <div className="flex items-center gap-2">
-                <div className="h-8 w-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black">
-                  <Sparkles size={16} />
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-lg sm:max-w-xl max-h-[92vh] rounded-2xl p-4 sm:p-5 shadow-2xl flex flex-col overflow-hidden space-y-3.5">
+            {/* Modal Header */}
+            <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-9 w-9 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center font-black shadow-sm">
+                  <Sparkles size={17} />
                 </div>
                 <div>
-                  <h3 className="text-sm font-black text-slate-900">Finalize & Convert to Sale</h3>
-                  <span className="text-[10px] font-mono text-slate-500">{convertModalOrder.orderNo}</span>
+                  <h3 className="text-sm sm:text-base font-black text-slate-900 leading-tight">Finalize & Convert to Sale</h3>
+                  <div className="flex items-center gap-1.5 mt-0.5">
+                    <span className="text-[10px] font-mono font-bold text-slate-500 bg-white/70 px-1.5 py-0.5 rounded border border-slate-200">{convertModalOrder.orderNo}</span>
+                    <span className="text-[10px] text-slate-500 font-bold">• {convertModalOrder.customerName}</span>
+                  </div>
                 </div>
               </div>
               <button
                 onClick={() => setConvertModalOrder(null)}
-                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
+                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-100/80 rounded-full"
               >
                 ✕
               </button>
             </div>
 
-            <div className="bg-[#fff7f9] p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Customer:</span>
-                <span className="font-black text-slate-900">{convertModalOrder.customerName}</span>
+            {/* Scrollable Form Content */}
+            <div className="flex-1 overflow-y-auto pr-1 space-y-3">
+              {/* Order & Converted Summary Banner */}
+              <div className="bg-[#fff7f9] p-3 rounded-xl border border-slate-200 text-xs grid grid-cols-2 gap-2 shadow-sm">
+                <div>
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Customer</span>
+                  <span className="font-black text-slate-900 truncate block">{convertModalOrder.customerName}</span>
+                </div>
+                <div className="text-right">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">Final Sale Total</span>
+                  <span className="font-black text-emerald-700 font-mono text-sm block">{fmt(convertAllocations.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0))}</span>
+                </div>
+                <div className="col-span-2 pt-1.5 border-t border-slate-200/60 flex items-center justify-between text-[11px]">
+                  <span className="text-slate-600 font-medium">Order Target: <strong className="text-slate-900">{convertModalOrder.totalItems} Plates</strong> ({fmt(convertModalOrder.totalAmount)})</span>
+                  <span className="font-bold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    Converting: {convertAllocations.reduce((acc, a) => acc + (parseInt(a.quantity) || 0), 0)} Plates
+                  </span>
+                </div>
               </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Total Order Value:</span>
-                <span className="font-black text-slate-900 font-mono">{fmt(convertModalOrder.totalAmount)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-slate-500 font-bold">Items count:</span>
-                <span className="font-bold text-slate-700">{convertModalOrder.details?.length || 0} Products ({convertModalOrder.totalItems} Plates)</span>
-              </div>
+
+              <form id="convert-sale-form" onSubmit={handleConvertToSaleSubmit} className="space-y-3">
+                {/* Item Allocations List */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between px-0.5">
+                    <label className="text-[10px] font-extrabold text-slate-600 uppercase tracking-widest flex items-center gap-1.5">
+                      <span>Allocated Items & Stock Batches</span>
+                      <span className="bg-slate-200/70 text-slate-700 px-1.5 py-0.2 rounded-full text-[9px] font-mono">{convertAllocations.length}</span>
+                    </label>
+                    <span className="text-[10px] text-slate-500">Pick supplier batch per line</span>
+                  </div>
+
+                  {convertAllocations.map((alloc, idx) => {
+                    const availableBatchesForProd = batches.filter(b => b.productId === parseInt(alloc.productId) && (b.currentQuantity > 0 || String(b.batchId) === String(alloc.batchId)));
+                    const selectedBatch = batches.find(b => String(b.batchId) === String(alloc.batchId));
+                    const isExceeding = selectedBatch && (parseInt(alloc.quantity) || 0) > selectedBatch.currentQuantity;
+                    const lineTotal = (parseFloat(alloc.quantity) || 0) * (parseFloat(alloc.unitPrice) || 0);
+
+                    return (
+                      <div key={idx} className="bg-[#fff7f9] border border-slate-200/90 p-3 rounded-xl space-y-2.5 relative shadow-sm hover:border-brand-accent/40 transition-all">
+                        {/* Row Header with Item Number and Remove Button */}
+                        <div className="flex items-center justify-between">
+                          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider bg-white/80 px-2 py-0.5 rounded border border-slate-200">
+                            Item #{idx + 1}
+                          </span>
+                          {convertAllocations.length > 1 && (
+                            <button
+                              type="button"
+                              onClick={() => handleRemoveConvertAllocation(idx)}
+                              className="text-rose-500 hover:text-rose-700 p-1 hover:bg-rose-50 rounded-lg transition-all flex items-center gap-1 text-[10px] font-bold"
+                              title="Remove this item line"
+                            >
+                              <Trash2 size={12} />
+                              <span>Remove</span>
+                            </button>
+                          )}
+                        </div>
+
+                        {/* Product Selection Dropdown */}
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Product</label>
+                          <select
+                            value={alloc.productId}
+                            onChange={e => handleUpdateConvertAllocation(idx, 'productId', e.target.value)}
+                            className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all shadow-xs"
+                            required
+                          >
+                            {products.map(p => (
+                              <option key={p.productId} value={p.productId}>
+                                {p.productName} ({p.variantName || 'Standard'})
+                              </option>
+                            ))}
+                          </select>
+                        </div>
+
+                        {/* Batch / Supplier Dropdown */}
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Supplier Batch & Available Stock</label>
+                            {selectedBatch && (
+                              <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+                                Stock: {selectedBatch.currentQuantity} pcs
+                              </span>
+                            )}
+                          </div>
+                          <select
+                            value={alloc.batchId}
+                            onChange={e => handleUpdateConvertAllocation(idx, 'batchId', e.target.value)}
+                            className={`w-full bg-white border ${isExceeding ? 'border-rose-400 bg-rose-50/20' : 'border-slate-200'} focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-800 font-medium transition-all shadow-xs`}
+                            required
+                          >
+                            <option value="">-- Choose Supplier Batch --</option>
+                            {availableBatchesForProd.map(b => (
+                              <option key={b.batchId} value={b.batchId}>
+                                {b.batchNumber} - {b.supplierName || 'Direct Intake'} (Available: {b.currentQuantity} pcs)
+                              </option>
+                            ))}
+                          </select>
+                          {availableBatchesForProd.length === 0 && (
+                            <p className="text-[10px] text-rose-500 font-bold mt-1 flex items-center gap-1">
+                              <AlertCircle size={11} /> No stock batches available for this product.
+                            </p>
+                          )}
+                          {isExceeding && (
+                            <p className="text-[10px] text-rose-600 font-bold mt-1 flex items-center gap-1">
+                              <AlertCircle size={11} /> Quantity ({alloc.quantity}) exceeds available batch stock ({selectedBatch.currentQuantity} pcs)!
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Qty, Plate Price, and Subtotal */}
+                        <div className="grid grid-cols-12 gap-2 pt-0.5 items-end">
+                          <div className="col-span-4">
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Quantity (pcs)</label>
+                            <input
+                              type="number"
+                              min="1"
+                              step="1"
+                              value={alloc.quantity}
+                              onChange={e => handleUpdateConvertAllocation(idx, 'quantity', e.target.value)}
+                              className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-2.5 py-1.5 text-xs font-black font-mono text-slate-900 shadow-xs"
+                              required
+                            />
+                          </div>
+                          <div className="col-span-4">
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Price (₹)</label>
+                            <input
+                              type="number"
+                              min="0"
+                              step="any"
+                              value={alloc.unitPrice}
+                              onChange={e => handleUpdateConvertAllocation(idx, 'unitPrice', e.target.value)}
+                              className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-2.5 py-1.5 text-xs font-black font-mono text-slate-900 shadow-xs"
+                              required
+                            />
+                          </div>
+                          <div className="col-span-4 text-right">
+                            <label className="block text-[9px] font-bold text-slate-500 uppercase tracking-wider mb-1">Line Total</label>
+                            <div className="px-2 py-1.5 bg-slate-100/70 border border-slate-200 rounded-xl text-xs font-black font-mono text-slate-900 truncate">
+                              {fmt(lineTotal)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+
+                  {/* + Add Item / Split Batch Button */}
+                  <button
+                    type="button"
+                    onClick={handleAddConvertAllocation}
+                    className="w-full py-2.5 border-2 border-dashed border-emerald-400 hover:border-emerald-600 bg-emerald-50/70 hover:bg-emerald-100/70 text-emerald-800 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all shadow-xs active:scale-[0.99]"
+                  >
+                    <Plus size={15} />
+                    <span>+ Add Item / Split Batch</span>
+                  </button>
+                </div>
+
+                {/* Payment Received & Business Account */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                  <div>
+                    <div className="flex items-center justify-between mb-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Payment Received (₹)</label>
+                      <button
+                        type="button"
+                        onClick={() => setConvertPaidAmount(convertAllocations.reduce((acc, a) => acc + ((parseFloat(a.quantity) || 0) * (parseFloat(a.unitPrice) || 0)), 0))}
+                        className="text-[9px] font-bold text-emerald-700 hover:underline"
+                      >
+                        Full Paid
+                      </button>
+                    </div>
+                    <input
+                      type="number"
+                      step="any"
+                      value={convertPaidAmount}
+                      onChange={e => setConvertPaidAmount(e.target.value)}
+                      className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm font-black font-mono text-slate-900 transition-all shadow-xs"
+                      required
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1">Receiving Account</label>
+                    <select
+                      value={convertAccountName}
+                      onChange={e => setConvertAccountName(e.target.value)}
+                      className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all shadow-xs"
+                      required
+                    >
+                      {accounts.map(a => (
+                        <option key={a.accountId} value={a.accountName}>
+                          {a.accountName}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+
+                <div className="p-2.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-900 text-[10px] leading-relaxed flex items-start gap-1.5">
+                  <AlertCircle size={13} className="shrink-0 mt-0.5 text-amber-600" />
+                  <span>
+                    Converting will deduct stock from the selected supplier batch(es) and record <strong>{fmt(convertPaidAmount)}</strong> in <strong>{convertAccountName}</strong>.
+                  </span>
+                </div>
+              </form>
             </div>
 
-            <form onSubmit={handleConvertToSaleSubmit} className="space-y-3">
-              {/* Supplier / Batch Selection per Item */}
-              <div className="space-y-2.5 pt-1">
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                  Select Batch (Supplier) for Items
-                </label>
-                {convertAllocations.map((alloc, idx) => {
-                  const prod = products.find(p => p.productId === alloc.productId);
-                  const prodTitle = prod ? `${prod.productName} (${prod.variantName})` : (alloc.productName || `Product #${alloc.productId}`);
-                  const availableBatchesForProd = batches.filter(b => b.productId === alloc.productId && (b.currentQuantity > 0 || String(b.batchId) === String(alloc.batchId)));
-
-                  return (
-                    <div key={idx} className="bg-[#fff7f9] border border-slate-200 p-3.5 rounded-xl space-y-2.5 relative shadow-sm">
-                      <div>
-                        <select
-                          value={alloc.productId}
-                          disabled
-                          className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold opacity-95 cursor-not-allowed"
-                        >
-                          <option value={alloc.productId}>{prodTitle}</option>
-                        </select>
-                      </div>
-                      <div>
-                        <select
-                          value={alloc.batchId}
-                          onChange={(e) => {
-                            const val = e.target.value;
-                            setConvertAllocations(prev => prev.map((item, i) => i === idx ? { ...item, batchId: val } : item));
-                          }}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium transition-all"
-                          required
-                        >
-                          <option value="">Select Batch (Supplier)</option>
-                          {availableBatchesForProd.map(b => (
-                            <option key={b.batchId} value={b.batchId}>
-                              {b.batchNumber} - {b.supplierName} (Qty: {b.currentQuantity})
-                            </option>
-                          ))}
-                        </select>
-                        {availableBatchesForProd.length === 0 && (
-                          <p className="text-[10px] text-rose-500 font-bold mt-1">
-                            ⚠️ No available stock batches for this product.
-                          </p>
-                        )}
-                      </div>
-                      <div className="flex items-center justify-between text-xs font-bold text-slate-600 px-1 pt-0.5">
-                        <span>Qty: {alloc.quantity} pcs</span>
-                        <span>Price: {fmt(alloc.unitPrice)}</span>
-                        <span className="font-black text-slate-900">Total: {fmt(alloc.quantity * alloc.unitPrice)}</span>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Payment Received (₹)</label>
-                <input
-                  type="number"
-                  step="any"
-                  value={convertPaidAmount}
-                  onChange={e => setConvertPaidAmount(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm font-black font-mono text-slate-900 transition-all"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Receiving Business Account</label>
-                <select
-                  value={convertAccountName}
-                  onChange={e => setConvertAccountName(e.target.value)}
-                  className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                  required
-                >
-                  {accounts.map(a => (
-                    <option key={a.accountId} value={a.accountName}>
-                      {a.accountName}
-                    </option>
-                  ))}
-                </select>
-              </div>
-
-              <div className="p-3 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-[10px] leading-relaxed">
-                ℹ️ Converting this order will deduct stock from the selected batch(es) and credit <strong>{fmt(convertPaidAmount)}</strong> into <strong>{convertAccountName}</strong>.
-              </div>
-
-              <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">
-                <button
-                  type="button"
-                  onClick={() => setConvertModalOrder(null)}
-                  className="w-1/2 bg-[#fff7f9] text-slate-700 hover:text-slate-900 rounded-xl py-3 text-xs font-bold transition-all border border-slate-200 hover:bg-slate-50 shadow-sm"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="submit"
-                  disabled={converting}
-                  className="w-1/2 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 hover:shadow-emerald-600/40 hover:-translate-y-0.5 disabled:opacity-50"
-                >
-                  {converting ? (
-                    <>
-                      <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                      <span>Converting...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles size={13} />
-                      <span>Confirm & Convert</span>
-                    </>
-                  )}
-                </button>
-              </div>
-            </form>
+            {/* Modal Footer */}
+            <div className="flex gap-2.5 pt-2 border-t border-pink-200/40 shrink-0">
+              <button
+                type="button"
+                onClick={() => setConvertModalOrder(null)}
+                className="w-1/3 bg-white text-slate-700 hover:text-slate-900 rounded-xl py-2.5 text-xs font-bold transition-all border border-slate-200 hover:bg-slate-50 shadow-xs"
+              >
+                Cancel
+              </button>
+              <button
+                type="submit"
+                form="convert-sale-form"
+                disabled={converting}
+                className="w-2/3 bg-gradient-to-r from-emerald-600 to-teal-600 text-white hover:from-emerald-700 hover:to-teal-700 rounded-xl py-2.5 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-md shadow-emerald-600/20 hover:shadow-emerald-600/40 hover:-translate-y-0.5 disabled:opacity-50"
+              >
+                {converting ? (
+                  <>
+                    <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    <span>Converting...</span>
+                  </>
+                ) : (
+                  <>
+                    <Sparkles size={14} />
+                    <span>Confirm & Convert to Sale</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
