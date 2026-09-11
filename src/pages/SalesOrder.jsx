@@ -229,12 +229,24 @@ export default function SalesOrder({ onNavigateToSale }) {
   const convertFinalTotal = Math.max(0, convertTotalCost + (parseFloat(convertAdjustment) || 0));
   const convertBalanceDue = Math.max(0, convertFinalTotal - (parseFloat(convertPaidAmount) || 0));
 
-  const openConvertModal = (order) => {
+  const openConvertModal = async (order) => {
     setConvertModalOrder(order);
     setConvertCustomerId(order.customerId ? String(order.customerId) : '');
     setConvertAdjustment(0);
+
+    let latestBatches = batches;
+    try {
+      const res = await apiRequest('/batch');
+      if (res && res.data) {
+        latestBatches = res.data;
+        setBatches(res.data);
+      }
+    } catch (err) {
+      console.error('Failed to refresh batches:', err);
+    }
+
     const initialItems = (order.details && order.details.length > 0) ? order.details.map(d => {
-      const availBatches = batches.filter(b => b.productId === d.productId && (b.currentQuantity > 0 || b.batchId === d.batchId));
+      const availBatches = latestBatches.filter(b => String(b.productId) === String(d.productId) && (b.currentQuantity > 0 || String(b.batchId) === String(d.batchId)));
       return {
         productId: d.productId ? String(d.productId) : '',
         batchId: availBatches.length === 1 ? String(availBatches[0].batchId) : '',
@@ -317,6 +329,8 @@ export default function SalesOrder({ onNavigateToSale }) {
       return;
     }
 
+    // Validate allocations and check available stock per batch
+    const batchQtyMap = {};
     for (let i = 0; i < convertItems.length; i++) {
       const it = convertItems[i];
       const prod = products.find(p => String(p.productId) === String(it.productId));
@@ -330,12 +344,28 @@ export default function SalesOrder({ onNavigateToSale }) {
         Swal.fire('Warning', `Please select a Batch (Supplier) for "${prodName}"`, 'warning');
         return;
       }
-      if (parseFloat(it.quantity) <= 0 || isNaN(parseFloat(it.quantity))) {
+      const qtyNum = parseFloat(it.quantity);
+      if (qtyNum <= 0 || isNaN(qtyNum)) {
         Swal.fire('Warning', `Please enter a valid quantity for "${prodName}"`, 'warning');
         return;
       }
       if (parseFloat(it.unitPrice) < 0 || isNaN(parseFloat(it.unitPrice))) {
         Swal.fire('Warning', `Please enter a valid price for "${prodName}"`, 'warning');
+        return;
+      }
+
+      batchQtyMap[it.batchId] = (batchQtyMap[it.batchId] || 0) + qtyNum;
+    }
+
+    // Verify stock against total quantity per batch
+    for (const batchId in batchQtyMap) {
+      const bObj = batches.find(b => String(b.batchId) === String(batchId));
+      if (bObj && batchQtyMap[batchId] > bObj.currentQuantity) {
+        Swal.fire(
+          'Insufficient Stock',
+          `Selected quantity (${batchQtyMap[batchId]}) exceeds available stock (${bObj.currentQuantity}) in batch "${bObj.batchNumber}" (${bObj.supplierName}).`,
+          'warning'
+        );
         return;
       }
     }
@@ -344,7 +374,9 @@ export default function SalesOrder({ onNavigateToSale }) {
     try {
       const payload = {
         orderId: convertModalOrder.orderId,
+        customerId: parseInt(targetCustId),
         paidAmount: parseFloat(convertPaidAmount) || 0,
+        adjustment: parseFloat(convertAdjustment) || 0,
         paymentMethodAccountName: convertAccountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash'),
         notes: convertModalOrder.notes || '',
         itemAllocations: convertItems.map(i => ({
@@ -1177,7 +1209,7 @@ export default function SalesOrder({ onNavigateToSale }) {
                           >
                             <option value="">Select Batch (Supplier)</option>
                             {batches
-                              .filter(b => b.productId === parseInt(item.productId) && (b.currentQuantity > 0 || b.batchId === parseInt(item.batchId)))
+                              .filter(b => String(b.productId) === String(item.productId) && (b.currentQuantity > 0 || String(b.batchId) === String(item.batchId)))
                               .map(b => (
                                 <option key={b.batchId} value={b.batchId}>
                                   {b.batchNumber} - {b.supplierName} (Qty: {b.currentQuantity})
