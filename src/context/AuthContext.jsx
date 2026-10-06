@@ -6,11 +6,11 @@ const getApiUrl = () => {
     (window.location.hostname === 'localhost' && !window.location.port) ||
     window.location.protocol === 'capacitor:';
   if (isCapacitor) {
-    return 'http://148.230.67.168:8087/api';
+    return 'https://vpms-api.duckdns.org/api';
   }
   return window.location.port === '3000' || window.location.port === '5173'
     ? 'http://localhost:5208/api'
-    : `http://148.230.67.168:8087/api`;
+    : 'https://vpms-api.duckdns.org/api';
 };
 
 const ApiUrl = getApiUrl();
