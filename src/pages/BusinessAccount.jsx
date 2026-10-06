@@ -4,7 +4,7 @@ import { Plus, Trash2, Search, ChevronRight, Pencil, Users, TrendingUp, Wallet, 
 import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
 import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
-import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
+import { getCurrentMonthRange, getPresetDateRange, isDateInRange, isDateBefore, formatDateDDMMYYYY } from '../utils/dateHelper';
 import DateInput from '../components/DateInput';
 
 const getAccountPartnerName = (acc) => {
@@ -241,11 +241,47 @@ export default function BusinessAccount() {
   const partnerSummary = accounts.map(acc => {
     const accName = acc.accountName || '';
     const partnerName = getAccountPartnerName(acc);
-    
-    // Filter transactions for this account and date range
-    const accTx = transactions.filter(t => 
-      t.accountId === acc.accountId && 
-      (period === 'all' || isDateInRange(t.transactionDate || t.createdAt, fromDate, toDate))
+    const pNameLower = partnerName.toLowerCase();
+    const accNameLower = accName.toLowerCase();
+
+    // All transactions for this account
+    const allAccTxs = transactions.filter(t => t.accountId === acc.accountId);
+    const existingRefIds = new Set(allAccTxs.filter(t => t.referenceType === 'PARTNER_TRANSACTION').map(t => t.referenceId));
+
+    // ── 1. Opening Balance Calculation (Cumulative liquid cash before fromDate) ──
+    let openingBalance = 0;
+    if (period !== 'all' && fromDate) {
+      const priorAccTxs = allAccTxs.filter(t => isDateBefore(t.transactionDate || t.createdAt, fromDate));
+      
+      const priorCredits = priorAccTxs
+        .filter(t => t.transactionType === 'CREDIT')
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      const priorDebits = priorAccTxs
+        .filter(t => t.transactionType === 'DEBIT')
+        .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+      // Prior unlinked partner ledgers
+      const priorUnlinkedLedgers = ledgers.filter(l => {
+        const lpName = (l.partnerName || '').toLowerCase();
+        const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
+        const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
+        const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !allAccTxs.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
+        return (isPartnerMatch || isAccMatch) && notInTx && isDateBefore(l.transactionDate || l.createdAt, fromDate);
+      });
+
+      const priorUnlinkedInvested = priorUnlinkedLedgers.reduce((sum, l) => {
+        if (l.transactionType === 'INVESTMENT') return sum + (Number(l.amount) || 0);
+        if (l.transactionType === 'WITHDRAWAL') return sum - (Number(l.amount) || 0);
+        return sum;
+      }, 0);
+
+      openingBalance = (priorCredits - priorDebits) + priorUnlinkedInvested;
+    }
+
+    // ── 2. Current Period Transactions (Within fromDate to toDate) ──
+    const accTx = allAccTxs.filter(t => 
+      period === 'all' || isDateInRange(t.transactionDate || t.createdAt, fromDate, toDate)
     );
 
     // Sales collected into this account (Credits from SALE)
@@ -263,7 +299,7 @@ export default function BusinessAccount() {
       .filter(t => t.transactionType === 'DEBIT' && t.referenceType === 'EXPENSE')
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
 
-    // 1. Direct Account-level Partner Investments & Withdrawals from AccountTransactions
+    // Direct Account-level Partner Investments & Withdrawals from AccountTransactions in this period
     const txInvested = accTx
       .filter(t => (t.referenceType === 'PARTNER_TRANSACTION' || (t.description || '').toLowerCase().includes('investment')) && t.transactionType === 'CREDIT')
       .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
@@ -274,16 +310,12 @@ export default function BusinessAccount() {
 
     const netTxInvested = txInvested - txWithdrawn;
 
-    // 2. Check for any unlinked PartnerLedger entries not already in accTx
-    const pNameLower = partnerName.toLowerCase();
-    const accNameLower = accName.toLowerCase();
-    const existingRefIds = new Set(accTx.filter(t => t.referenceType === 'PARTNER_TRANSACTION').map(t => t.referenceId));
-
+    // Check for any unlinked PartnerLedger entries in this period
     const unlinkedLedgers = ledgers.filter(l => {
       const lpName = (l.partnerName || '').toLowerCase();
       const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
       const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
-      const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !accTx.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
+      const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !allAccTxs.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
       return (isPartnerMatch || isAccMatch) && notInTx && (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate));
     });
 
@@ -293,12 +325,34 @@ export default function BusinessAccount() {
       return sum;
     }, 0);
 
+    const currentPeriodCredits = accTx
+      .filter(t => t.transactionType === 'CREDIT')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+    const currentPeriodDebits = accTx
+      .filter(t => t.transactionType === 'DEBIT')
+      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
     const invested = netTxInvested + unlinkedLedgerInvested;
 
-    // Net In-Hand for partner (Invested + Sales Collected - Purchases Paid - Expenses Paid)
-    const netInHand = (invested + salesCollected) - purchasesPaid - expensesPaid;
+    // Net cash change during this period accounts for all credits and debits
+    const periodNetChange = (currentPeriodCredits - currentPeriodDebits) + unlinkedLedgerInvested;
 
-    return { acc, accName, partnerName, salesCollected, purchasesPaid, expensesPaid, invested, netInHand };
+    // Available Net In-Hand for partner (Opening Balance + Period Net Change)
+    const netInHand = openingBalance + periodNetChange;
+
+    return { 
+      acc, 
+      accName, 
+      partnerName, 
+      openingBalance, 
+      salesCollected, 
+      purchasesPaid, 
+      expensesPaid, 
+      invested, 
+      periodNetChange, 
+      netInHand 
+    };
   });
 
   const onPrintCashInHand = () => {
@@ -315,6 +369,7 @@ export default function BusinessAccount() {
     }, 50);
   };
 
+  const totalOpening = partnerSummary.reduce((s, p) => s + p.openingBalance, 0);
   const totalInvested = partnerSummary.reduce((s, p) => s + p.invested, 0);
   const totalCollected = partnerSummary.reduce((s, p) => s + p.salesCollected, 0);
   const totalPurchases = partnerSummary.reduce((s, p) => s + p.purchasesPaid, 0);
@@ -449,6 +504,11 @@ export default function BusinessAccount() {
                         <div className={`text-lg font-black ${ps.netInHand >= 0 ? 'text-white' : 'text-rose-200'}`}>
                           {fmt(ps.netInHand)}
                         </div>
+                        {period !== 'all' && ps.openingBalance !== 0 && (
+                          <div className="text-white/75 text-[9px] font-semibold tracking-wide">
+                            Opening: {fmt(ps.openingBalance)}
+                          </div>
+                        )}
                       </div>
                     </div>
 
@@ -518,6 +578,12 @@ export default function BusinessAccount() {
               <span className="text-white font-black text-sm">Combined Business</span>
             </div>
             <div className="flex items-center gap-4 flex-wrap">
+              {period !== 'all' && totalOpening !== 0 && (
+                <div className="text-center">
+                  <div className="text-[9px] font-bold text-slate-400 uppercase">Opening Balance</div>
+                  <div className="text-slate-300 font-black text-sm">{fmt(totalOpening)}</div>
+                </div>
+              )}
               <div className="text-center">
                 <div className="text-[9px] font-bold text-slate-400 uppercase">Total Invested</div>
                 <div className="text-blue-400 font-black text-sm">{fmt(totalInvested)}</div>
@@ -569,7 +635,7 @@ export default function BusinessAccount() {
         </div>
 
         {/* Structured KPI Metadata Strip */}
-        <div className="grid grid-cols-3 gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left">
+        <div className={`grid ${period !== 'all' ? 'grid-cols-4' : 'grid-cols-3'} gap-2 border border-slate-300 rounded-lg p-2 bg-slate-50 text-left`}>
           <div className="px-2 py-0.5 border-r border-slate-200">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
             <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
@@ -580,6 +646,12 @@ export default function BusinessAccount() {
               {period === 'all' ? 'All Time' : period === 'custom' ? `${formatDateDDMMYYYY(fromDate)} to ${formatDateDDMMYYYY(toDate)}` : period === 'thisMonth' ? 'This Month' : period === 'lastMonth' ? 'Last Month' : period === 'today' ? 'Today' : period}
             </span>
           </div>
+          {period !== 'all' && (
+            <div className="px-2 py-0.5 border-r border-slate-200">
+              <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Opening Balance</span>
+              <span className="text-[11px] font-black text-slate-800">{fmt(totalOpening)}</span>
+            </div>
+          )}
           <div className="px-2 py-0.5">
             <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Net Cash In-Hand</span>
             <span className={`text-[11px] font-black ${totalInHand >= 0 ? 'text-emerald-700' : 'text-rose-700'}`}>{fmt(totalInHand)}</span>
@@ -592,6 +664,9 @@ export default function BusinessAccount() {
             <thead className="bg-slate-900 text-white">
               <tr className="border-b border-slate-800">
                 <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider">Partner / Account</th>
+                {period !== 'all' && (
+                  <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-right">Opening Balance</th>
+                )}
                 <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-right">Capital Invested</th>
                 <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-right">Sales Collected</th>
                 <th className="px-3 py-2 text-[9px] font-black uppercase tracking-wider text-right">Purchases Paid</th>
@@ -606,6 +681,9 @@ export default function BusinessAccount() {
                     <div>{ps.accName}</div>
                     <div className="text-[9px] font-normal text-slate-500">{formatAccountType(ps.acc.accountType, ps.accName)}</div>
                   </td>
+                  {period !== 'all' && (
+                    <td className="px-3 py-2.5 text-right font-mono font-bold text-slate-600">{fmt(ps.openingBalance)}</td>
+                  )}
                   <td className="px-3 py-2.5 text-right font-mono font-bold text-blue-700">{fmt(ps.invested)}</td>
                   <td className="px-3 py-2.5 text-right font-mono font-bold text-emerald-700">{fmt(ps.salesCollected)}</td>
                   <td className="px-3 py-2.5 text-right font-mono font-bold text-amber-700">{fmt(ps.purchasesPaid)}</td>
@@ -621,6 +699,9 @@ export default function BusinessAccount() {
                 <td className="px-3 py-2.5 uppercase text-[9px] text-slate-900 font-black">
                   BUSINESS TOTAL
                 </td>
+                {period !== 'all' && (
+                  <td className="px-3 py-2.5 text-right font-mono font-black text-slate-700">{fmt(totalOpening)}</td>
+                )}
                 <td className="px-3 py-2.5 text-right font-mono font-black text-blue-900">{fmt(totalInvested)}</td>
                 <td className="px-3 py-2.5 text-right font-mono font-black text-emerald-900">{fmt(totalCollected)}</td>
                 <td className="px-3 py-2.5 text-right font-mono font-black text-amber-900">{fmt(totalPurchases)}</td>

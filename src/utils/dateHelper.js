@@ -110,3 +110,11 @@ export const isDateInRange = (dateInput, fromDateStr, toDateStr) => {
   return true;
 };
 
+export const isDateBefore = (dateInput, fromDateStr) => {
+  if (!fromDateStr || !dateInput) return false;
+  const dateStr = getLocalDateString(dateInput);
+  if (!dateStr) return false;
+  return dateStr < fromDateStr;
+};
+
+

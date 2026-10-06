@@ -14,6 +14,9 @@ export default function UsersAndRoles() {
   // Form toggle and search filters
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [search, setSearch] = useState('');
+  
+  // Backup state
+  const [lastBackup, setLastBackup] = useState(localStorage.getItem('vpms_last_backup') || 'Never');
 
   // Form State
   const [form, setForm] = useState({
@@ -54,6 +57,31 @@ export default function UsersAndRoles() {
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleBackup = async () => {
+    try {
+      Swal.fire({ title: 'Generating Backup...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+      const data = await apiRequest('/backup/download');
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vpms-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      const backupTime = new Date().toLocaleString();
+      localStorage.setItem('vpms_last_backup', backupTime);
+      setLastBackup(backupTime);
+      
+      Swal.fire('Success', 'Backup downloaded successfully', 'success');
+    } catch (err) {
+      Swal.fire('Error', err.message || 'Failed to generate backup', 'error');
     }
   };
 
@@ -268,6 +296,59 @@ export default function UsersAndRoles() {
           ))
         )}
       </section>
+
+      {/* =========================================================
+          DATA MANAGEMENT (ONLY FOR PANDIYAN)
+      ========================================================= */}
+      {useAuth().user?.username === 'Pandiyan' && (
+        <div className="relative overflow-hidden rounded-2xl border border-slate-200 shadow-lg mt-4">
+          {/* Gradient Header Banner */}
+          <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-6 py-4 flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="w-9 h-9 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center backdrop-blur-md shadow-inner">
+                <span className="text-lg">🗄️</span>
+              </div>
+              <div>
+                <h3 className="text-sm font-black text-white tracking-tight">Data Management</h3>
+                <p className="text-[10px] text-blue-200 font-medium mt-0.5">Admin-only · Visible only to you</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Card Body */}
+          <div className="bg-[#f8fafc] p-5">
+            <div className="grid grid-cols-1 sm:grid-cols-1 gap-4">
+
+              {/* JSON Backup Card */}
+              <div className="bg-white rounded-2xl border border-slate-100 shadow-sm p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 hover:shadow-md transition-shadow">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-blue-600 to-indigo-700 flex items-center justify-center shadow-lg shadow-blue-500/25 shrink-0">
+                    <span className="text-2xl">💾</span>
+                  </div>
+                  <div>
+                    <h4 className="text-sm font-black text-slate-900 leading-tight">Download JSON Backup</h4>
+                    <p className="text-[10px] text-slate-400 font-mono mt-1">
+                      Last backup: <span className="text-blue-500 font-semibold">{lastBackup}</span>
+                    </p>
+                  </div>
+                </div>
+                <button
+                  onClick={handleBackup}
+                  className="shrink-0 bg-gradient-to-r from-slate-900 to-blue-900 hover:from-blue-700 hover:to-indigo-700 text-white rounded-xl px-5 py-2.5 text-xs font-black transition-all shadow-md shadow-slate-900/20 hover:shadow-blue-500/30 hover:-translate-y-0.5 flex items-center gap-2 whitespace-nowrap"
+                >
+                  <span>💾</span> Download Backup
+                </button>
+              </div>
+
+            </div>
+
+            {/* Footer Note */}
+            <p className="text-[10px] text-slate-400 font-medium mt-3 text-center">
+              ⚠️ This section is only visible to <span className="font-black text-slate-600">Pandiyan</span>. Backup files contain sensitive business data.
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* =====================================================
           RECORD SALE FORM OVERLAY MODAL (Sliding Drawer Layout)

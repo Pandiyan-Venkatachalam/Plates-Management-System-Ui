@@ -2,14 +2,17 @@ import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
 import { sortLatestFirst } from '../utils/sortHelper';
 import { formatDateDDMMYYYY, formatDateTimeDDMMYYYY } from '../utils/dateHelper';
+import { ChevronRight } from 'lucide-react';
+import Swal from 'sweetalert2';
 
 export default function More() {
-  const { apiRequest, logout } = useAuth();
+  const { user, apiRequest, logout } = useAuth();
   const [activeSubTab, setActiveSubTab] = useState('partners');
   const [partners, setPartners] = useState([]);
   const [ledgers, setLedgers] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [audit, setAudit] = useState([]);
+  const [lastBackup, setLastBackup] = useState(localStorage.getItem('vpms_last_backup') || 'Never');
 
   const [partnerForm, setPartnerForm] = useState({ name: '', phone: '' });
   const [txForm, setTxForm] = useState({ partnerId: '', type: 'INVESTMENT', amount: 0, desc: '', accountName: 'Cash' });
@@ -77,6 +80,31 @@ export default function More() {
       loadData();
     } catch (err) {
       alert(err.message);
+    }
+  };
+
+  const handleBackup = async () => {
+    try {
+      Swal.fire({ title: 'Generating Backup...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
+      const data = await apiRequest('/backup/download');
+      
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `vpms-backup-${new Date().toISOString().split('T')[0]}.json`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+      
+      const backupTime = new Date().toLocaleString();
+      localStorage.setItem('vpms_last_backup', backupTime);
+      setLastBackup(backupTime);
+      
+      Swal.fire('Success', 'Backup downloaded successfully', 'success');
+    } catch (err) {
+      Swal.fire('Error', err.message || 'Failed to generate backup', 'error');
     }
   };
 
@@ -285,6 +313,27 @@ export default function More() {
                 </div>
               </div>
             ))}
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          DATA MANAGEMENT (ONLY FOR PANDIYAN)
+      ========================================================= */}
+      {user?.username === 'Pandiyan' && (
+        <div className="bg-[#fff7f9] rounded-2xl p-5 shadow-sm border border-slate-100">
+          <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest border-b border-slate-100 pb-2 mb-4">Data Management</h3>
+          <div className="space-y-4">
+            <div>
+              <h4 className="text-sm font-bold text-slate-800">Download Database Backup</h4>
+              <p className="text-xs text-slate-500 mb-3">Export all application data as JSON</p>
+              <button onClick={handleBackup} className="bg-slate-900 hover:bg-slate-800 text-white rounded-xl px-4 py-2 text-xs font-bold transition-all shadow-sm flex items-center justify-center gap-2 max-w-[200px]">
+                <span>💾</span> Download Backup
+              </button>
+              <p className="text-[10px] text-slate-400 font-mono mt-2">
+                Last backup: <span className="text-blue-500 font-semibold">{lastBackup}</span>
+              </p>
+            </div>
           </div>
         </div>
       )}
