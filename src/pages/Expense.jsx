@@ -4,7 +4,7 @@ import { Plus, Trash2, Search, ChevronRight, ChevronDown, Pencil, DollarSign, Wa
 import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
 import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
-import { sendWhatsAppNotificationToPartners, createExpenseWhatsAppMessage } from '../utils/whatsappHelper';
+import { sendWhatsAppNotificationToPartner, createExpenseWhatsAppMessage } from '../utils/whatsappHelper';
 import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function Expense() {
@@ -97,7 +97,7 @@ export default function Expense() {
 
   const togglePeriodLock = () => {
     if (selectedMonth === 'all') return;
-    
+
     let updated;
     if (isPeriodClosed) {
       updated = lockedMonths.filter(m => m !== selectedMonth);
@@ -158,7 +158,7 @@ export default function Expense() {
       description: form.desc,
       amount: expAmt,
       accountId: parseInt(form.accountId) || (accounts[0]?.accountId || 1),
-      contributions: isSplitExpense 
+      contributions: isSplitExpense
         ? expenseContributions.map(c => ({ accountId: parseInt(c.accountId), amount: parseFloat(c.amount) || 0 }))
         : null
     };
@@ -183,7 +183,7 @@ export default function Expense() {
           accountName: acc?.accountName || 'Cash Account',
           handledBy: 'Admin'
         });
-        sendWhatsAppNotificationToPartners(apiRequest, {
+        sendWhatsAppNotificationToPartner(apiRequest, {
           message: waMsg,
           eventType: 'EXPENSE_CREATE',
           referenceId: form.desc,
@@ -192,7 +192,7 @@ export default function Expense() {
           performedBy: 'Admin'
         });
 
-        Swal.fire('Success', 'Expense outflow recorded & Partners alerted via WhatsApp!', 'success');
+        Swal.fire('Success', 'Expense outflow recorded & Partner alerted via WhatsApp!', 'success');
       }
       setForm({ desc: '', amount: '', accountId: '' });
       setEditingId(null);
@@ -324,14 +324,14 @@ export default function Expense() {
       {/* =========================================================
           HEADER
       ========================================================= */}
-      
-      
+
+
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
         <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
-            <span>Accounting & Finance</span>
-            <ChevronRight size={10} className="shrink-0" />
-            <span className="text-slate-400 truncate">Expenses Ledger</span>
-          </div>
+          <span>Accounting & Finance</span>
+          <ChevronRight size={10} className="shrink-0" />
+          <span className="text-slate-400 truncate">Expenses Ledger</span>
+        </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             General Expenses
@@ -341,21 +341,20 @@ export default function Expense() {
               onClick={handlePrint}
               className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
               <span className="hidden sm:inline">Print Report</span>
             </button>
             <button
               onClick={togglePeriodLock}
-              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border ${
-                isPeriodClosed 
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm border ${isPeriodClosed
                   ? 'bg-rose-50 border-rose-200 text-rose-600 hover:bg-rose-100'
                   : 'bg-[#fff7f9] border-slate-200 text-brand-accent hover:bg-slate-50'
-              }`}
+                }`}
             >
               {isPeriodClosed ? <Unlock size={14} strokeWidth={2.5} /> : <Lock size={14} strokeWidth={2.5} />}
               <span className="hidden sm:inline">{isPeriodClosed ? 'Open Period' : 'Close Period'}</span>
             </button>
-            <button 
+            <button
               onClick={() => {
                 if (isPeriodClosed) {
                   Swal.fire('Locked', 'This accounting period has been finalized. Open the period to register new outflows.', 'warning');
@@ -366,11 +365,10 @@ export default function Expense() {
                 setShowCreateForm(true);
               }}
               disabled={isPeriodClosed}
-              className={`flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg ${
-                isPeriodClosed 
-                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none' 
+              className={`flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg ${isPeriodClosed
+                  ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-200 shadow-none'
                   : 'bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5'
-              }`}
+                }`}
             >
               <Plus size={14} strokeWidth={3} />
               New Expense
@@ -392,7 +390,7 @@ export default function Expense() {
       ===================================================== */}
       <section className="grid grid-cols-2 md:grid-cols-3 gap-2.5 sm:gap-3 print:hidden">
         {/* Card 1: Total Expenses */}
-        <div 
+        <div
           onClick={() => setSelectedMonth(selectedMonth === 'all' ? (getMonthsList()[0] || 'all') : 'all')}
           role="button"
           tabIndex={0}
@@ -404,13 +402,13 @@ export default function Expense() {
             <div className="flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl bg-rose-100 text-rose-600 shadow-sm">
               <DollarSign size={15} />
             </div>
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Total<br className="sm:hidden"/> Expenses</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Total<br className="sm:hidden" /> Expenses</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10 truncate">{money(totalExpenseVal)}</p>
         </div>
 
         {/* Card 2: Closing Status */}
-        <div 
+        <div
           onClick={togglePeriodLock}
           role="button"
           tabIndex={0}
@@ -422,14 +420,13 @@ export default function Expense() {
             <div className={`flex h-7 w-7 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-xl shadow-sm ${isPeriodClosed ? 'bg-rose-100 text-rose-600' : 'bg-emerald-100 text-emerald-600'}`}>
               <WalletCards size={15} />
             </div>
-            <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Current<br className="sm:hidden"/> Status</p>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-500 uppercase tracking-wider leading-tight">Current<br className="sm:hidden" /> Status</p>
           </div>
           <div className="flex items-center gap-1.5 relative z-10">
-            <span className={`inline-flex items-center px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-black tracking-wide ${
-              isPeriodClosed 
-                ? 'bg-rose-50 text-rose-600 border border-rose-200' 
+            <span className={`inline-flex items-center px-2 sm:px-2.5 py-0.5 sm:py-1 rounded-full text-xs sm:text-sm font-black tracking-wide ${isPeriodClosed
+                ? 'bg-rose-50 text-rose-600 border border-rose-200'
                 : 'bg-emerald-50 text-emerald-600 border border-emerald-200'
-            }`}>
+              }`}>
               {isPeriodClosed ? '🔒 Closed' : '🔓 Open'}
             </span>
           </div>
@@ -545,26 +542,24 @@ export default function Expense() {
                     </td>
                     <td className="px-5 py-3 text-right print:hidden">
                       <div className="flex justify-end items-center gap-1">
-                        <button 
+                        <button
                           onClick={() => handleEdit(e)}
                           disabled={isPeriodClosed}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            isPeriodClosed 
-                              ? 'text-slate-300 cursor-not-allowed' 
+                          className={`p-1.5 rounded-lg transition-colors ${isPeriodClosed
+                              ? 'text-slate-300 cursor-not-allowed'
                               : 'text-slate-400 hover:text-blue-600 hover:bg-slate-100'
-                          }`}
+                            }`}
                           title={isPeriodClosed ? "Period Closed" : "Edit details"}
                         >
                           <Pencil size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDelete(e.transactionId)}
                           disabled={isPeriodClosed}
-                          className={`p-1.5 rounded-lg transition-colors ${
-                            isPeriodClosed 
-                              ? 'text-slate-300 cursor-not-allowed' 
+                          className={`p-1.5 rounded-lg transition-colors ${isPeriodClosed
+                              ? 'text-slate-300 cursor-not-allowed'
                               : 'text-slate-400 hover:text-rose-600 hover:bg-slate-100'
-                          }`}
+                            }`}
                           title={isPeriodClosed ? "Period Closed" : "Delete record"}
                         >
                           <Trash2 size={14} />
@@ -639,22 +634,20 @@ export default function Expense() {
 
                 {/* Actions Footer */}
                 <div className="grid grid-cols-2 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
-                  <button 
+                  <button
                     onClick={() => handleEdit(e)}
                     disabled={isPeriodClosed}
-                    className={`flex flex-col items-center justify-center gap-1 py-3 transition-colors ${
-                      isPeriodClosed ? 'text-slate-300 cursor-not-allowed bg-slate-50' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
-                    }`}
+                    className={`flex flex-col items-center justify-center gap-1 py-3 transition-colors ${isPeriodClosed ? 'text-slate-300 cursor-not-allowed bg-slate-50' : 'text-slate-500 hover:text-blue-600 hover:bg-blue-50/50'
+                      }`}
                   >
                     <Pencil size={15} />
                     <span className="text-[9px] font-bold">Edit</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(e.transactionId)}
                     disabled={isPeriodClosed}
-                    className={`flex flex-col items-center justify-center gap-1 py-3 transition-colors ${
-                      isPeriodClosed ? 'text-slate-300 cursor-not-allowed bg-slate-50' : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50/50'
-                    }`}
+                    className={`flex flex-col items-center justify-center gap-1 py-3 transition-colors ${isPeriodClosed ? 'text-slate-300 cursor-not-allowed bg-slate-50' : 'text-slate-500 hover:text-rose-600 hover:bg-rose-50/50'
+                      }`}
                   >
                     <Trash2 size={15} />
                     <span className="text-[9px] font-bold">Delete</span>
@@ -672,12 +665,12 @@ export default function Expense() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? 'Edit Expenses' : 'Record Expenses'}
               </h3>
-              <button 
+              <button
                 onClick={() => {
                   setShowCreateForm(false);
                   setEditingId(null);
@@ -716,7 +709,7 @@ export default function Expense() {
               <div className="bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-3">
                 <div className="flex items-center justify-between">
                   <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                    Debit Account / Partners
+                    Debit Account / Partner
                   </label>
                   {accounts.length > 1 && (
                     <button
@@ -736,7 +729,7 @@ export default function Expense() {
                       }}
                       className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors shadow-sm"
                     >
-                      {isSplitExpense ? 'Single Account' : '👥 Split Across Partners'}
+                      {isSplitExpense ? 'Single Account' : '👥 Split Across Partner'}
                     </button>
                   )}
                 </div>
@@ -870,8 +863,8 @@ export default function Expense() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
                   <Plus size={14} strokeWidth={3} /> Record

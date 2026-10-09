@@ -7,7 +7,7 @@ import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
 import { sortLatestFirst, markItemAsUpdated, sortBatchesBySizeAndRecency } from '../utils/sortHelper';
 import { formatDateDDMMYYYY } from '../utils/dateHelper';
-import { sendWhatsAppNotificationToPartners, createStockAdjustWhatsAppMessage, createNewBatchWhatsAppMessage } from '../utils/whatsappHelper';
+import { sendWhatsAppNotificationToPartner, createStockAdjustWhatsAppMessage, createNewBatchWhatsAppMessage } from '../utils/whatsappHelper';
 import DateInput from '../components/DateInput';
 
 export default function Batch() {
@@ -60,7 +60,7 @@ export default function Batch() {
   const loadData = () => {
     apiRequest('/batch').then(res => setBatches(sortBatchesBySizeAndRecency(res.data || [], 'batch'))).catch(console.error);
     apiRequest('/product').then(res => setProducts(sortLatestFirst(res.data || [], ['productId', 'id'], 'product'))).catch(console.error);
-    
+
     apiRequest('/category').then(res => {
       const cats = Array.isArray(res.data) ? res.data : [];
       const sortedCats = [...cats].sort((a, b) => {
@@ -156,7 +156,7 @@ export default function Batch() {
             body: JSON.stringify(payload)
           });
         }
-        
+
         // Automated WhatsApp Notification for new stock batches
         form.items.forEach(item => {
           const prod = products.find(p => String(p.productId) === String(item.productId));
@@ -168,7 +168,7 @@ export default function Batch() {
             unitCost: item.unitCost,
             handledBy: 'Admin'
           });
-          sendWhatsAppNotificationToPartners(apiRequest, {
+          sendWhatsAppNotificationToPartner(apiRequest, {
             message: waMsg,
             eventType: 'STOCK_CREATE',
             referenceId: form.batchNumber,
@@ -178,7 +178,7 @@ export default function Batch() {
           });
         });
 
-        Swal.fire('Success', 'Stock batches created & Partners notified via WhatsApp!', 'success');
+        Swal.fire('Success', 'Stock batches created & Partner notified via WhatsApp!', 'success');
       }
       setForm({
         batchNumber: '',
@@ -254,7 +254,7 @@ export default function Batch() {
         reason: adjustForm.description,
         handledBy: 'Admin'
       });
-      sendWhatsAppNotificationToPartners(apiRequest, {
+      sendWhatsAppNotificationToPartner(apiRequest, {
         message: waMsg,
         eventType: 'STOCK_ADJUST',
         referenceId: String(adjustForm.batchId),
@@ -263,7 +263,7 @@ export default function Batch() {
         performedBy: 'Admin'
       });
 
-      Swal.fire('Success', 'Stock adjusted & Partners notified via WhatsApp!', 'success');
+      Swal.fire('Success', 'Stock adjusted & Partner notified via WhatsApp!', 'success');
       setShowAdjustModal(false);
       setAdjustForm({ batchId: '', newQuantity: '', description: '' });
       loadData();
@@ -276,17 +276,17 @@ export default function Batch() {
     batches.filter(b => {
       if (stockFilter === 'instock' && b.currentQuantity <= 0) return false;
       if (stockFilter === 'outofstock' && b.currentQuantity > 0) return false;
-      
+
       if (selectedCategory && selectedCategory !== 'all') {
         const prod = products.find(p => p.productId === b.productId);
         const batchCatId = b.categoryId || prod?.categoryId;
         const batchCatName = b.categoryName || prod?.categoryName;
         const targetCat = categories.find(c => String(c.categoryId || c.id) === String(selectedCategory));
         const targetCatName = targetCat?.categoryName || targetCat?.name;
-        
+
         const matchesCatId = batchCatId && String(batchCatId) === String(selectedCategory);
         const matchesCatName = targetCatName && batchCatName && batchCatName.toLowerCase() === targetCatName.toLowerCase();
-        
+
         if (!matchesCatId && !matchesCatName) {
           return false;
         }
@@ -389,42 +389,42 @@ export default function Batch() {
           </h1>
         </div>
         <div className="flex gap-2 shrink-0">
-          
-            <button
-              onClick={downloadCSV}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <Download size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Download CSV</span>
-            </button>
-          
-          
-            <button
-              onClick={handlePrintPDF}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden xs:inline">Print Report</span>
-            </button>
-          
-          <button 
-              onClick={() => {
-                setEditingId(null);
-                setForm({
-                  batchNumber: '',
-                  items: [{ productId: '', initialQuantity: '', unitCost: '' }],
-                  locationId: '',
-                  receivedDate: new Date().toISOString().substring(0, 10),
-                  status: 'FINALIZED'
-                });
-                setShowCreateForm(true);
-              }}
-              className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
-            >
-              <Plus size={14} strokeWidth={3} />
-              New Batch
-            </button>
-          </div>
+
+          <button
+            onClick={downloadCSV}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrintPDF}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setForm({
+                batchNumber: '',
+                items: [{ productId: '', initialQuantity: '', unitCost: '' }],
+                locationId: '',
+                receivedDate: new Date().toISOString().substring(0, 10),
+                status: 'FINALIZED'
+              });
+              setShowCreateForm(true);
+            }}
+            className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+          >
+            <Plus size={14} strokeWidth={3} />
+            New Batch
+          </button>
+        </div>
       </section>
 
       {/* =====================================================
@@ -517,11 +517,10 @@ export default function Batch() {
                     <td className="px-5 py-3 font-bold text-slate-800 text-xs">{b.productName}</td>
                     <td className="px-5 py-3 text-right text-xs text-slate-600 font-mono">₹{b.landedUnitCost?.toFixed(2)}</td>
                     <td className="px-5 py-3 text-right">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-mono text-[10px] font-bold ${
-                        b.currentQuantity === 0 
-                          ? 'bg-slate-100 text-slate-400' 
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-mono text-[10px] font-bold ${b.currentQuantity === 0
+                          ? 'bg-slate-100 text-slate-400'
                           : 'bg-emerald-50 text-emerald-600'
-                      }`}>
+                        }`}>
                         {b.currentQuantity} / {b.initialQuantity}
                       </span>
                     </td>
@@ -537,14 +536,14 @@ export default function Batch() {
                         >
                           Adjust
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleEdit(b)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                           title="Edit details"
                         >
                           <Pencil size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDelete(b.batchId)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors"
                           title="Delete record"
@@ -611,15 +610,15 @@ export default function Batch() {
           </div>
         ) : (
           paginatedBatches.map((b) => (
-            <article 
-              key={b.batchId} 
+            <article
+              key={b.batchId}
               className="p-[1px] rounded-2xl bg-gradient-to-br from-blue-500/30 via-slate-200 to-indigo-500/30 shadow-md shadow-slate-200/60 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden"
             >
               <div className="bg-[#fff7f9] rounded-2xl overflow-hidden flex flex-col h-full">
                 {/* Effective Colored Card Header */}
                 <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
                   <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
-                  
+
                   <div className="flex items-center gap-3 relative z-10">
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white backdrop-blur-md border border-white/10 shadow-inner">
                       <Package size={20} className="text-blue-300" />
@@ -636,11 +635,10 @@ export default function Batch() {
                     </div>
                   </div>
 
-                  <span className={`relative z-10 inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border ${
-                    b.currentQuantity > 0 
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                  <span className={`relative z-10 inline-flex items-center px-2.5 py-1 rounded-full text-[10px] font-black uppercase tracking-wider backdrop-blur-md border ${b.currentQuantity > 0
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                       : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                  }`}>
+                    }`}>
                     {b.currentQuantity > 0 ? `${b.currentQuantity.toLocaleString()} pcs` : 'Depleted'}
                   </span>
                 </div>
@@ -666,12 +664,11 @@ export default function Batch() {
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                      <div 
-                        className={`h-full rounded-full transition-all duration-500 ${
-                          b.currentQuantity / (b.initialQuantity || 1) > 0.4 
-                            ? 'bg-gradient-to-r from-blue-500 to-emerald-500' 
+                      <div
+                        className={`h-full rounded-full transition-all duration-500 ${b.currentQuantity / (b.initialQuantity || 1) > 0.4
+                            ? 'bg-gradient-to-r from-blue-500 to-emerald-500'
                             : 'bg-gradient-to-r from-amber-500 to-rose-500'
-                        }`}
+                          }`}
                         style={{ width: `${Math.min(100, Math.max(0, (b.currentQuantity / (b.initialQuantity || 1)) * 100))}%` }}
                       />
                     </div>
@@ -690,14 +687,14 @@ export default function Batch() {
                     <Sliders size={15} />
                     <span className="text-[9px] font-bold">Adjust</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleEdit(b)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
                   >
                     <Pencil size={15} />
                     <span className="text-[9px] font-bold">Edit</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(b.batchId)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-rose-600 hover:bg-rose-50/50"
                   >
@@ -717,12 +714,12 @@ export default function Batch() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? 'Edit Stock Batch' : 'Direct Batch Intake'}
               </h3>
-              <button 
+              <button
                 onClick={() => {
                   setShowCreateForm(false);
                   setEditingId(null);
@@ -850,8 +847,8 @@ export default function Batch() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
                   <Plus size={14} strokeWidth={3} />

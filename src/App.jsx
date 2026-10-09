@@ -303,7 +303,7 @@ function AppContent() {
               title={!desktopSidebarOpen ? 'Partner Management' : ''}
             >
               <Users size={15} />
-              {desktopSidebarOpen && <span>Partners</span>}
+              {desktopSidebarOpen && <span>Partner</span>}
             </button>
 
             <button
@@ -694,11 +694,10 @@ function AppContent() {
       <nav className="md:hidden fixed bottom-3 left-3 right-3 bg-white/95 backdrop-blur-2xl border border-slate-200/90 rounded-2xl shadow-xl shadow-slate-900/10 py-1.5 px-2 flex justify-around items-center z-45">
         <button
           onClick={() => handleTabSelect('home')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${
-            activeTab === 'home'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${activeTab === 'home'
               ? 'text-blue-600 font-black bg-blue-50/90 border border-blue-200/60 shadow-xs scale-105'
               : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-slate-50'
-          }`}
+            }`}
         >
           <Home size={19} strokeWidth={activeTab === 'home' ? 2.5 : 2} />
           <span className="text-[10px] tracking-tight">Home</span>
@@ -706,11 +705,10 @@ function AppContent() {
 
         <button
           onClick={() => handleTabSelect('batch')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${
-            activeTab === 'batch'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${activeTab === 'batch'
               ? 'text-blue-600 font-black bg-blue-50/90 border border-blue-200/60 shadow-xs scale-105'
               : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-slate-50'
-          }`}
+            }`}
         >
           <Package size={19} strokeWidth={activeTab === 'batch' ? 2.5 : 2} />
           <span className="text-[10px] tracking-tight">Inventory</span>
@@ -718,11 +716,10 @@ function AppContent() {
 
         <button
           onClick={() => handleTabSelect('profitloss')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${
-            activeTab === 'profitloss'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${activeTab === 'profitloss'
               ? 'text-blue-600 font-black bg-blue-50/90 border border-blue-200/60 shadow-xs scale-105'
               : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-slate-50'
-          }`}
+            }`}
         >
           <TrendingUp size={19} strokeWidth={activeTab === 'profitloss' ? 2.5 : 2} />
           <span className="text-[10px] tracking-tight">Reports</span>
@@ -730,11 +727,10 @@ function AppContent() {
 
         <button
           onClick={() => handleTabSelect('users')}
-          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${
-            activeTab === 'users'
+          className={`flex flex-col items-center gap-0.5 px-3 py-1 rounded-xl transition-all ${activeTab === 'users'
               ? 'text-blue-600 font-black bg-blue-50/90 border border-blue-200/60 shadow-xs scale-105'
               : 'text-slate-600 hover:text-slate-900 font-bold hover:bg-slate-50'
-          }`}
+            }`}
         >
           <Settings size={19} strokeWidth={activeTab === 'users' ? 2.5 : 2} />
           <span className="text-[10px] tracking-tight">Profile</span>

@@ -46,7 +46,7 @@ export default function BusinessAccount() {
   const [printTarget, setPrintTarget] = useState('cashInHand'); // 'cashInHand' | 'accounts'
 
   // Partner summary data
-  const [partners, setPartners] = useState([]);
+  const [Partner, setPartner] = useState([]);
   const [transactions, setTransactions] = useState([]);
   const [ledgers, setLedgers] = useState([]);
   const [summaryLoading, setSummaryLoading] = useState(false);
@@ -67,15 +67,15 @@ export default function BusinessAccount() {
     let selectedPartnerId = partnerId;
     if (!selectedPartnerId) {
       if (defaultAccount) {
-        const found = partners.find(p => {
+        const found = Partner.find(p => {
           const pName = (p.partnerName || '').toLowerCase();
           const accLower = defaultAccount.toLowerCase();
           return pName && (accLower.includes(pName) || pName.includes(accLower));
         });
         if (found) selectedPartnerId = found.partnerId;
       }
-      if (!selectedPartnerId && partners.length > 0) {
-        selectedPartnerId = partners[0].partnerId;
+      if (!selectedPartnerId && Partner.length > 0) {
+        selectedPartnerId = Partner[0].partnerId;
       }
     }
 
@@ -159,7 +159,7 @@ export default function BusinessAccount() {
         apiRequest('/account/transactions').catch(() => ({ data: [] })),
         apiRequest('/partnerledger').catch(() => ({ data: [] })),
       ]);
-      setPartners(Array.isArray(partnerRes?.data) ? partnerRes.data : []);
+      setPartner(Array.isArray(partnerRes?.data) ? partnerRes.data : []);
       setTransactions(Array.isArray(txRes?.data) ? txRes.data : []);
       setLedgers(Array.isArray(ledgerRes?.data) ? ledgerRes.data : []);
     } catch (e) { console.error(e); }
@@ -229,7 +229,7 @@ export default function BusinessAccount() {
   };
 
   const filteredAccounts = sortLatestFirst(
-    accounts.filter(a => 
+    accounts.filter(a =>
       a.accountName?.toLowerCase().includes(search.toLowerCase()) ||
       a.accountType?.toLowerCase().includes(search.toLowerCase())
     ),
@@ -238,7 +238,7 @@ export default function BusinessAccount() {
   );
 
   // ── Compute per-account (partner) summary ──
-  const partnerSummary = accounts.map(acc => {
+  const Partnerummary = accounts.map(acc => {
     const accName = acc.accountName || '';
     const partnerName = getAccountPartnerName(acc);
     const pNameLower = partnerName.toLowerCase();
@@ -252,7 +252,7 @@ export default function BusinessAccount() {
     let openingBalance = 0;
     if (period !== 'all' && fromDate) {
       const priorAccTxs = allAccTxs.filter(t => isDateBefore(t.transactionDate || t.createdAt, fromDate));
-      
+
       const priorCredits = priorAccTxs
         .filter(t => t.transactionType === 'CREDIT')
         .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
@@ -280,7 +280,7 @@ export default function BusinessAccount() {
     }
 
     // ── 2. Current Period Transactions (Within fromDate to toDate) ──
-    const accTx = allAccTxs.filter(t => 
+    const accTx = allAccTxs.filter(t =>
       period === 'all' || isDateInRange(t.transactionDate || t.createdAt, fromDate, toDate)
     );
 
@@ -341,17 +341,17 @@ export default function BusinessAccount() {
     // Available Net In-Hand for partner (Opening Balance + Period Net Change)
     const netInHand = openingBalance + periodNetChange;
 
-    return { 
-      acc, 
-      accName, 
-      partnerName, 
-      openingBalance, 
-      salesCollected, 
-      purchasesPaid, 
-      expensesPaid, 
-      invested, 
-      periodNetChange, 
-      netInHand 
+    return {
+      acc,
+      accName,
+      partnerName,
+      openingBalance,
+      salesCollected,
+      purchasesPaid,
+      expensesPaid,
+      invested,
+      periodNetChange,
+      netInHand
     };
   });
 
@@ -369,12 +369,12 @@ export default function BusinessAccount() {
     }, 50);
   };
 
-  const totalOpening = partnerSummary.reduce((s, p) => s + p.openingBalance, 0);
-  const totalInvested = partnerSummary.reduce((s, p) => s + p.invested, 0);
-  const totalCollected = partnerSummary.reduce((s, p) => s + p.salesCollected, 0);
-  const totalPurchases = partnerSummary.reduce((s, p) => s + p.purchasesPaid, 0);
-  const totalExpenses = partnerSummary.reduce((s, p) => s + p.expensesPaid, 0);
-  const totalInHand = partnerSummary.reduce((s, p) => s + p.netInHand, 0);
+  const totalOpening = Partnerummary.reduce((s, p) => s + p.openingBalance, 0);
+  const totalInvested = Partnerummary.reduce((s, p) => s + p.invested, 0);
+  const totalCollected = Partnerummary.reduce((s, p) => s + p.salesCollected, 0);
+  const totalPurchases = Partnerummary.reduce((s, p) => s + p.purchasesPaid, 0);
+  const totalExpenses = Partnerummary.reduce((s, p) => s + p.expensesPaid, 0);
+  const totalInHand = Partnerummary.reduce((s, p) => s + p.netInHand, 0);
 
   const partnerColors = [
     { bg: 'from-blue-600 to-indigo-700', badge: 'bg-blue-100 text-blue-700', ring: 'ring-blue-200', icon: 'text-blue-600' },
@@ -398,7 +398,7 @@ export default function BusinessAccount() {
             </div>
             <h2 className="text-xs sm:text-base font-black text-slate-900 leading-tight truncate">Cash In-Hand</h2>
           </div>
-          
+
           <div className="flex items-center gap-1 sm:gap-2 shrink-0 flex-nowrap">
             {/* Record Investment */}
             <button
@@ -429,7 +429,7 @@ export default function BusinessAccount() {
               title="Print Cash In-Hand Report"
               className="flex items-center justify-center p-1.5 sm:px-2.5 sm:py-1.5 rounded-xl text-[10px] sm:text-xs font-bold bg-white hover:bg-slate-100 text-slate-700 transition-all shadow-sm border border-slate-200/60 shrink-0"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
               <span className="hidden md:inline ml-1">Print</span>
             </button>
 
@@ -468,15 +468,15 @@ export default function BusinessAccount() {
 
         {/* Per-Partner Cards */}
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
-          {partnerSummary.length === 0 ? (
+          {Partnerummary.length === 0 ? (
             <div className="col-span-2 bg-slate-50 rounded-2xl p-6 text-center text-slate-400 text-sm border border-slate-100">
               No accounts found. Create accounts to see partner summary.
             </div>
           ) : (
-            partnerSummary.map((ps, idx) => {
+            Partnerummary.map((ps, idx) => {
               const col = partnerColors[idx % partnerColors.length];
               const initial = (ps.accName || 'A')[0].toUpperCase();
-              const matchedPartner = partners.find(p => {
+              const matchedPartner = Partner.find(p => {
                 const pName = (p.partnerName || '').toLowerCase();
                 const accNameLower = (ps.accName || '').toLowerCase();
                 const partnerNameLower = (ps.partnerName || '').toLowerCase();
@@ -484,7 +484,7 @@ export default function BusinessAccount() {
                   (pName && (accNameLower.includes(pName) || pName.includes(accNameLower))) ||
                   (pName && (partnerNameLower.includes(pName) || pName.includes(partnerNameLower)))
                 );
-              }) || (partners.length > 0 ? partners[0] : null);
+              }) || (Partner.length > 0 ? Partner[0] : null);
               return (
                 <div key={ps.acc.accountId} className={`rounded-2xl overflow-hidden shadow-md ring-1 ${col.ring} bg-white flex flex-col justify-between`}>
                   <div>
@@ -571,7 +571,7 @@ export default function BusinessAccount() {
         </div>
 
         {/* Combined Total Strip */}
-        {partnerSummary.length > 1 && (
+        {Partnerummary.length > 1 && (
           <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 rounded-2xl px-4 py-3 flex flex-wrap items-center justify-between gap-3">
             <div className="flex items-center gap-2">
               <Wallet size={16} className="text-blue-300" />
@@ -675,7 +675,7 @@ export default function BusinessAccount() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-200">
-              {partnerSummary.map((ps, idx) => (
+              {Partnerummary.map((ps, idx) => (
                 <tr key={idx} className="hover:bg-slate-50">
                   <td className="px-3 py-2.5 font-black text-slate-900">
                     <div>{ps.accName}</div>
@@ -755,10 +755,10 @@ export default function BusinessAccount() {
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2 print:hidden">
         <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
-            <span>Accounting & Finance</span>
-            <ChevronRight size={10} className="shrink-0" />
-            <span className="text-slate-400 truncate">Accounts</span>
-          </div>
+          <span>Accounting & Finance</span>
+          <ChevronRight size={10} className="shrink-0" />
+          <span className="text-slate-400 truncate">Accounts</span>
+        </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             Business Accounts
@@ -768,10 +768,10 @@ export default function BusinessAccount() {
               onClick={onPrintAccounts}
               className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
             >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
+              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
               <span className="hidden sm:inline">Print Report</span>
             </button>
-            <button 
+            <button
               onClick={() => {
                 setEditingId(null);
                 setForm({ name: '', type: "Pandiyan's Acc" });
@@ -835,14 +835,14 @@ export default function BusinessAccount() {
                     </td>
                     <td className="px-5 py-3 text-right print:hidden">
                       <div className="flex justify-end items-center gap-1">
-                        <button 
+                        <button
                           onClick={() => handleEdit(a)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                           title="Edit details"
                         >
                           <Pencil size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDelete(a.accountId)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors"
                           title="Delete record"
@@ -894,14 +894,14 @@ export default function BusinessAccount() {
 
                 {/* Actions Footer */}
                 <div className="grid grid-cols-2 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
-                  <button 
+                  <button
                     onClick={() => handleEdit(a)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
                   >
                     <Pencil size={15} />
                     <span className="text-[9px] font-bold">Edit</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(a.accountId)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-rose-600 hover:bg-rose-50/50"
                   >
@@ -921,12 +921,12 @@ export default function BusinessAccount() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? 'Edit Ledger Account' : 'Create Ledger Account'}
               </h3>
-              <button 
+              <button
                 onClick={() => {
                   setShowCreateForm(false);
                   setEditingId(null);
@@ -974,8 +974,8 @@ export default function BusinessAccount() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
                   <Plus size={14} strokeWidth={3} />
@@ -992,7 +992,7 @@ export default function BusinessAccount() {
       {showInvestmentModal && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#f0fdf4] border border-emerald-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-emerald-200/40 pb-3 mb-3">
               <div className="flex items-center gap-2">
                 <div className="w-8 h-8 rounded-xl bg-emerald-600/15 text-emerald-700 flex items-center justify-center">
@@ -1005,7 +1005,7 @@ export default function BusinessAccount() {
                   <p className="text-[10px] font-bold text-slate-500">Post partner investment or withdrawal</p>
                 </div>
               </div>
-              <button 
+              <button
                 onClick={() => setShowInvestmentModal(false)}
                 className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-100 rounded-full"
               >
@@ -1021,11 +1021,10 @@ export default function BusinessAccount() {
                   <button
                     type="button"
                     onClick={() => setInvestmentForm({ ...investmentForm, transactionType: 'INVESTMENT' })}
-                    className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                      investmentForm.transactionType === 'INVESTMENT'
+                    className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${investmentForm.transactionType === 'INVESTMENT'
                         ? 'bg-emerald-600 text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     <Plus size={13} strokeWidth={3} />
                     <span>Investment (Add)</span>
@@ -1033,11 +1032,10 @@ export default function BusinessAccount() {
                   <button
                     type="button"
                     onClick={() => setInvestmentForm({ ...investmentForm, transactionType: 'WITHDRAWAL' })}
-                    className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${
-                      investmentForm.transactionType === 'WITHDRAWAL'
+                    className={`py-2 rounded-lg text-xs font-bold transition flex items-center justify-center gap-1.5 ${investmentForm.transactionType === 'WITHDRAWAL'
                         ? 'bg-rose-600 text-white shadow-sm'
                         : 'text-slate-600 hover:text-slate-900'
-                    }`}
+                      }`}
                   >
                     <span>Withdrawal (Take)</span>
                   </button>
@@ -1054,7 +1052,7 @@ export default function BusinessAccount() {
                   required
                 >
                   <option value="">-- Choose Partner --</option>
-                  {partners.map(p => (
+                  {Partner.map(p => (
                     <option key={p.partnerId} value={p.partnerId}>
                       {p.partnerName} {p.contactPhone ? `(${p.contactPhone})` : ''}
                     </option>
@@ -1138,14 +1136,13 @@ export default function BusinessAccount() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   disabled={investmentSubmitting}
-                  className={`w-1/2 text-white rounded-xl py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg ${
-                    investmentForm.transactionType === 'INVESTMENT'
+                  className={`w-1/2 text-white rounded-xl py-2.5 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg ${investmentForm.transactionType === 'INVESTMENT'
                       ? 'bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 shadow-emerald-600/20'
                       : 'bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 shadow-rose-600/20'
-                  }`}
+                    }`}
                 >
                   {investmentSubmitting ? (
                     <RefreshCw size={14} className="animate-spin" />

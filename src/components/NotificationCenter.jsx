@@ -61,7 +61,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
   const username = user?.username || user?.name || 'admin';
 
   const [notifications, setNotifications] = useState([]);
-  const [partners, setPartners] = useState([]);
+  const [Partner, setPartner] = useState([]);
   const [entities, setEntities] = useState({
     sales: [], purchases: [], batches: [], customers: [], suppliers: [], expenses: [], products: []
   });
@@ -136,7 +136,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
             const act = (a.actionName || a.title || '').toUpperCase();
             const tbl = (a.tableName || a.category || '').toUpperCase();
             const usr = (a.performedBy || a.username || '').toUpperCase();
-            return !act.startsWith('WHATSAPP_ALERT') && !act.startsWith('WHATSAPP_BROADCAST') && tbl !== 'PARTNERS' && usr !== 'SYSTEM';
+            return !act.startsWith('WHATSAPP_ALERT') && !act.startsWith('WHATSAPP_BROADCAST') && tbl !== 'Partner' && usr !== 'SYSTEM';
           })
           .map(a => ({
             id: a.id || a.auditId,
@@ -156,9 +156,9 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
           const ref = String(item.referenceId || item.message || '').replace(/[^\d]/g, '');
           const act = (item.actionType || '').toUpperCase();
           const itemTime = new Date(item.timestamp || Date.now()).getTime();
-          
+
           const dedupeKey = ref ? `${cat}_${ref}_${act}` : `ID_${item.id}`;
-          
+
           if (!seenKeys.has(dedupeKey)) {
             seenKeys.set(dedupeKey, itemTime);
             notifData.push(item);
@@ -185,7 +185,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
       });
 
       if (partnerRes?.data && Array.isArray(partnerRes.data)) {
-        setPartners(partnerRes.data
+        setPartner(partnerRes.data
           .filter(p => !p.isDeleted && p.contactPhone && p.contactPhone.trim().length >= 10)
           .map(p => ({ partnerId: p.partnerId, partnerName: p.partnerName, contactPhone: p.contactPhone }))
         );
@@ -387,12 +387,12 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
       const custMatch = fallback.match(/\*Customer:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Supplier:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Product:\*\s*([^\n\r*]+)/i);
       const totalMatch = fallback.match(/\*Total Amount:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Total Cost:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Amount:\*\s*([^\n\r*]+)/i);
       const dueMatch = fallback.match(/\*Balance Due:\*\s*([^\n\r*]+)/i) || fallback.match(/\*Balance:\*\s*([^\n\r*]+)/i);
-      
+
       const parts = [];
       if (custMatch) parts.push(custMatch[1].trim());
       if (totalMatch) parts.push(`Total: ${totalMatch[1].trim()}`);
       if (dueMatch) parts.push(`Due ${dueMatch[1].trim()}`);
-      
+
       fallback = parts.length > 0 ? parts.join(' \u2022 ') : (item.title || 'Operational Update');
     } else if (!fallback || fallback.length < 3) {
       fallback = item.title || 'Operational Update';
@@ -419,11 +419,11 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
     const resolved = resolveNotificationDetails(item);
     const msg = resolved.whatsappMsg;
 
-    if (partners.length === 1) {
+    if (Partner.length === 1) {
       // Close notification drawer first so nothing is behind WhatsApp
       setIsOpen(false);
-      setTimeout(() => openWhatsApp(partners[0].contactPhone, msg), 150);
-    } else if (partners.length > 1) {
+      setTimeout(() => openWhatsApp(Partner[0].contactPhone, msg), 150);
+    } else if (Partner.length > 1) {
       // Close notification drawer before showing Swal so it renders on top
       setIsOpen(false);
       setTimeout(() => {
@@ -432,7 +432,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
           html: `
             <div style="text-align:left">
               <p style="font-size:13px;color:#475569;margin-bottom:10px">Choose partner to send notification to:</p>
-              ${partners.map((p, i) => `
+              ${Partner.map((p, i) => `
                 <button id="vpms-wa-btn-${i}"
                   style="width:100%;margin-bottom:8px;background:#16a34a;color:#fff;font-weight:700;padding:14px 16px;border-radius:12px;font-size:14px;border:none;cursor:pointer;display:flex;align-items:center;gap:8px;">
                   <span style="font-size:18px">&#x1F4F2;</span>
@@ -444,7 +444,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
           showCancelButton: true,
           cancelButtonText: 'Close',
           didOpen: () => {
-            partners.forEach((p, i) => {
+            Partner.forEach((p, i) => {
               const btn = document.getElementById(`vpms-wa-btn-${i}`);
               if (btn) {
                 btn.addEventListener('click', () => {
@@ -492,14 +492,14 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
   const popoverStyle = isActualMobile
     ? { position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, maxHeight: '100dvh', width: '100vw', borderRadius: 0, zIndex: 99999 }
     : {
-        position: 'fixed',
-        top: `${coords.top}px`,
-        left: coords.left !== null ? `${coords.left}px` : 'auto',
-        right: coords.right !== null ? `${coords.right}px` : 'auto',
-        width: '380px',
-        maxHeight: '85vh',
-        zIndex: 99999
-      };
+      position: 'fixed',
+      top: `${coords.top}px`,
+      left: coords.left !== null ? `${coords.left}px` : 'auto',
+      right: coords.right !== null ? `${coords.right}px` : 'auto',
+      width: '380px',
+      maxHeight: '85vh',
+      zIndex: 99999
+    };
 
   return (
     <div className="relative inline-block">
@@ -508,9 +508,8 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
         <button
           ref={buttonRef}
           onClick={toggleOpen}
-          className={`relative p-1.5 rounded-lg transition-all duration-200 active:scale-95 flex items-center justify-center ${
-            isOpen ? 'bg-brand-accent/20 text-brand-accent' : 'text-slate-300 hover:text-slate-100 hover:bg-brand-sidebar-hover'
-          }`}
+          className={`relative p-1.5 rounded-lg transition-all duration-200 active:scale-95 flex items-center justify-center ${isOpen ? 'bg-brand-accent/20 text-brand-accent' : 'text-slate-300 hover:text-slate-100 hover:bg-brand-sidebar-hover'
+            }`}
           title="Admin Activity & Notifications"
           aria-label="Notifications"
         >
@@ -525,9 +524,8 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
         <button
           ref={buttonRef}
           onClick={toggleOpen}
-          className={`relative p-2 rounded-xl transition-all duration-200 active:scale-95 flex items-center justify-center ${
-            isOpen ? 'bg-brand-accent/20 text-brand-accent' : 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
-          }`}
+          className={`relative p-2 rounded-xl transition-all duration-200 active:scale-95 flex items-center justify-center ${isOpen ? 'bg-brand-accent/20 text-brand-accent' : 'bg-white/10 hover:bg-white/20 text-white border border-white/15'
+            }`}
           title="Admin Activity & Notifications"
           aria-label="Notifications"
         >
@@ -588,11 +586,10 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
                 <button
                   key={tab.id}
                   onClick={() => setFilter(tab.id)}
-                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${
-                    filter === tab.id
+                  className={`px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all whitespace-nowrap ${filter === tab.id
                       ? 'bg-slate-900 text-white'
                       : 'bg-white text-slate-600 hover:bg-slate-200 border border-slate-200'
-                  }`}
+                    }`}
                 >
                   {tab.label}
                 </button>
@@ -675,7 +672,7 @@ export default function NotificationCenter({ onNavigate, isMobile = false, isSid
           {/* Footer */}
           <div className="bg-slate-50 px-4 py-2 border-t border-slate-100 flex items-center justify-between shrink-0">
             <span className="text-[10px] font-bold text-slate-500">
-              {partners.length > 0 ? `🟢 ${partners.length} partner(s) linked` : '⚡ WhatsApp Ready'}
+              {Partner.length > 0 ? `🟢 ${Partner.length} partner(s) linked` : '⚡ WhatsApp Ready'}
             </span>
             <span className="text-[9px] text-slate-400">Auto-refreshes every 20s</span>
           </div>

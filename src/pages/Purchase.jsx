@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown, 
-  ChevronRight, FileText, CircleDollarSign, WalletCards, 
+import {
+  Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown,
+  ChevronRight, FileText, CircleDollarSign, WalletCards,
   TrendingUp, Eye, Pencil, CheckCircle, Download, X
 } from 'lucide-react';
 import Swal from 'sweetalert2';
@@ -11,7 +11,7 @@ import { downloadCsvCrossPlatform } from '../utils/exportCsv';
 import { Capacitor } from '@capacitor/core';
 import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
 import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
-import { sendWhatsAppNotificationToPartners, createPurchaseWhatsAppMessage } from '../utils/whatsappHelper';
+import { sendWhatsAppNotificationToPartner, createPurchaseWhatsAppMessage } from '../utils/whatsappHelper';
 import DateInput from '../components/DateInput';
 import SearchableSupplierSelect from '../components/SearchableSupplierSelect';
 
@@ -47,6 +47,12 @@ export default function Purchase() {
   const [isSplitPayment, setIsSplitPayment] = useState(false);
   const [paymentContributions, setPaymentContributions] = useState([]);
 
+  // Payment Modal States
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentPurchase, setPaymentPurchase] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [newPayment, setNewPayment] = useState({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
+
   const loadData = () => {
     apiRequest('/purchase').then(res => setPurchases(sortLatestFirst(res.data, ['purchaseId', 'id'], 'purchase'))).catch(console.error);
     apiRequest('/supplier').then(res => setSuppliers(sortLatestFirst(res.data, ['supplierId', 'id'], 'supplier'))).catch(console.error);
@@ -64,6 +70,65 @@ export default function Purchase() {
   useEffect(() => {
     loadData();
   }, []);
+
+  const fetchPayments = async (purchaseId) => {
+    try {
+      const res = await apiRequest(`/purchase/${purchaseId}/payments`);
+      setPayments(res.data || []);
+    } catch (err) {
+      console.error('Error fetching payments:', err);
+    }
+  };
+
+  const openPaymentModal = (purchase) => {
+    setPaymentPurchase(purchase);
+    setPayments([]);
+    setNewPayment({ amount: '', accountId: accounts.length > 0 ? accounts[0].accountId : '', paymentMethod: 'CASH', notes: '' });
+    setShowPaymentModal(true);
+    fetchPayments(purchase.purchaseId);
+  };
+
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    if (!newPayment.amount || newPayment.amount <= 0) {
+      Swal.fire('Error', 'Amount must be greater than zero', 'error');
+      return;
+    }
+    if (!newPayment.accountId) {
+      Swal.fire('Error', 'Please select a payment account', 'error');
+      return;
+    }
+    try {
+      await apiRequest(`/purchase/${paymentPurchase.purchaseId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: parseFloat(newPayment.amount),
+          accountId: parseInt(newPayment.accountId),
+          paymentMethod: newPayment.paymentMethod,
+          notes: newPayment.notes
+        })
+      });
+      Swal.fire('Success', 'Payment recorded', 'success');
+      setNewPayment({ ...newPayment, amount: '', notes: '' });
+      fetchPayments(paymentPurchase.purchaseId);
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to delete this payment?")) return;
+    try {
+      await apiRequest(`/purchase/${paymentPurchase.purchaseId}/payments/${paymentId}`, {
+        method: 'DELETE'
+      });
+      fetchPayments(paymentPurchase.purchaseId);
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
 
   const getAccountInHand = (accNameOrId) => {
     const acc = accounts.find(a => a.accountName === accNameOrId || a.accountId === accNameOrId || String(a.accountId) === String(accNameOrId));
@@ -164,7 +229,7 @@ export default function Purchase() {
       expenses: [],
       paidAmount: paidNum,
       paymentMethodAccountName: accountName,
-      paymentContributions: isSplitPayment 
+      paymentContributions: isSplitPayment
         ? paymentContributions.map(c => ({ accountName: c.accountName, amount: parseFloat(c.amount) || 0 }))
         : (paidNum > 0 ? [{ accountName, amount: paidNum }] : [])
     };
@@ -189,14 +254,14 @@ export default function Purchase() {
             paymentStatus: paidNum >= totalCost ? 'PAID' : paidNum > 0 ? 'PARTIAL' : 'UNPAID',
             status: 'COMPLETED',
             paymentMethodAccountName: accountName,
-            paymentContributions: isSplitPayment 
+            paymentContributions: isSplitPayment
               ? paymentContributions.map(c => ({ accountName: c.accountName, amount: parseFloat(c.amount) || 0 }))
               : (paidNum > 0 ? [{ accountName, amount: paidNum }] : [])
           })
         });
         markItemAsUpdated('purchase', editingId);
 
-        // Automated WhatsApp Notification to Partners
+        // Automated WhatsApp Notification to Partner
         const waMsg = createPurchaseWhatsAppMessage({
           purchaseId: editingId,
           supplierName,
@@ -205,7 +270,7 @@ export default function Purchase() {
           balanceAmount: Math.max(0, totalCost - paidNum),
           handledBy: 'Admin'
         });
-        sendWhatsAppNotificationToPartners(apiRequest, {
+        sendWhatsAppNotificationToPartner(apiRequest, {
           message: waMsg,
           eventType: 'PURCHASE_UPDATE',
           referenceId: String(editingId),
@@ -222,7 +287,7 @@ export default function Purchase() {
         });
         const createdPurchaseId = createRes?.data?.purchaseId || 'New';
 
-        // Automated WhatsApp Notification to Partners
+        // Automated WhatsApp Notification to Partner
         const waMsg = createPurchaseWhatsAppMessage({
           purchaseId: createdPurchaseId,
           supplierName,
@@ -231,7 +296,7 @@ export default function Purchase() {
           balanceAmount: Math.max(0, totalCost - paidNum),
           handledBy: 'Admin'
         });
-        sendWhatsAppNotificationToPartners(apiRequest, {
+        sendWhatsAppNotificationToPartner(apiRequest, {
           message: waMsg,
           eventType: 'PURCHASE_CREATE',
           referenceId: String(createdPurchaseId),
@@ -240,7 +305,7 @@ export default function Purchase() {
           performedBy: 'Admin'
         });
 
-        Swal.fire('Success', 'Purchase recorded, stock added & Partners alerted via WhatsApp!', 'success');
+        Swal.fire('Success', 'Purchase recorded, stock added & Partner alerted via WhatsApp!', 'success');
       }
       setItems([{ productId: '', quantity: 0, unitCost: 0 }]);
       setSupplierId('');
@@ -390,38 +455,38 @@ export default function Purchase() {
           </h1>
         </div>
         <div className="flex gap-2 shrink-0">
-          
-            <button
-              onClick={downloadCSV}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <Download size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Download CSV</span>
-            </button>
-          
-          
-            <button
-              onClick={handlePrint}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden xs:inline">Print Report</span>
-            </button>
-          
-          <button 
-              onClick={() => {
-                setEditingId(null);
-                setSupplierId('');
-                setItems([{ productId: '', quantity: 0, unitCost: 0 }]);
-                setPaidAmount(0);
-                setShowCreateForm(true);
-              }}
-              className="flex shrink-0 items-center justify-center gap-1.5 bg-gradient-to-r from-brand-accent to-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5 transition-all"
-            >
-              <Plus size={14} strokeWidth={3} />
-              New Purchase
-            </button>
-          </div>
+
+          <button
+            onClick={downloadCSV}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrint}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setSupplierId('');
+              setItems([{ productId: '', quantity: 0, unitCost: 0 }]);
+              setPaidAmount(0);
+              setShowCreateForm(true);
+            }}
+            className="flex shrink-0 items-center justify-center gap-1.5 bg-gradient-to-r from-brand-accent to-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5 transition-all"
+          >
+            <Plus size={14} strokeWidth={3} />
+            New Purchase
+          </button>
+        </div>
       </section>
 
       {/* =====================================================
@@ -429,7 +494,7 @@ export default function Purchase() {
       ===================================================== */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
         {/* Total Purchases Count */}
-        <div 
+        <div
           onClick={() => setBalanceFilter('all')}
           role="button"
           tabIndex={0}
@@ -441,13 +506,13 @@ export default function Purchase() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
               <FileText size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Purchases</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Purchases</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{filteredPurchases.length}</p>
         </div>
 
         {/* Total Purchases Cost */}
-        <div 
+        <div
           onClick={() => setBalanceFilter('all')}
           role="button"
           tabIndex={0}
@@ -459,13 +524,13 @@ export default function Purchase() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
               <CircleDollarSign size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Cost</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Cost</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalPurchasesVal)}</p>
         </div>
 
         {/* Paid */}
-        <div 
+        <div
           onClick={() => setBalanceFilter(balanceFilter === 'paid' ? 'all' : 'paid')}
           role="button"
           tabIndex={0}
@@ -477,13 +542,13 @@ export default function Purchase() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-100 text-indigo-600">
               <WalletCards size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Paid</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Paid</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalPaidVal)}</p>
         </div>
 
         {/* Due */}
-        <div 
+        <div
           onClick={() => setBalanceFilter(balanceFilter === 'due' ? 'all' : 'due')}
           role="button"
           tabIndex={0}
@@ -495,7 +560,7 @@ export default function Purchase() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
               <TrendingUp size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight">Outstanding<br/>Due</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight">Outstanding<br />Due</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-white tracking-tight relative z-10">{money(totalDueVal)}</p>
         </div>
@@ -563,7 +628,7 @@ export default function Purchase() {
           {/* Date Picker Range Inputs */}
           <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-10 sm:h-9 w-full sm:w-auto">
             <CalendarDays size={13} className="text-slate-400 hidden sm:block shrink-0" />
-            <DateInput 
+            <DateInput
               value={fromDate}
               onChange={e => {
                 setFromDate(e.target.value);
@@ -572,7 +637,7 @@ export default function Purchase() {
               className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
             />
             <span className="text-slate-300 text-[10px] shrink-0">-</span>
-            <DateInput 
+            <DateInput
               value={toDate}
               onChange={e => {
                 setToDate(e.target.value);
@@ -644,13 +709,12 @@ export default function Purchase() {
                       {money(p.balanceAmount)}
                     </td>
                     <td className="px-3 py-2 text-center whitespace-nowrap">
-                      <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${
-                        p.balanceAmount <= 0
+                      <span className={`inline-flex items-center justify-center px-2 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider whitespace-nowrap ${p.balanceAmount <= 0
                           ? "bg-emerald-100 text-emerald-700"
                           : p.paidAmount > 0
                             ? "bg-amber-100 text-amber-700"
                             : "bg-rose-100 text-rose-700"
-                      }`}>
+                        }`}>
                         {p.balanceAmount <= 0 ? "Paid" : p.paidAmount > 0 ? "Partial" : "Due"}
                       </span>
                     </td>
@@ -661,6 +725,9 @@ export default function Purchase() {
                         </button>
                         <button onClick={() => handleEdit(p)} className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-slate-100 rounded-lg transition-colors" title="Edit details">
                           <Pencil size={14} />
+                        </button>
+                        <button onClick={() => openPaymentModal(p)} className="p-1.5 text-slate-400 hover:text-amber-600 hover:bg-slate-100 rounded-lg transition-colors" title="Payments">
+                          <CircleDollarSign size={14} />
                         </button>
                         <button onClick={() => handleDelete(p.purchaseId)} className="p-1.5 text-slate-400 hover:text-rose-600 hover:bg-slate-100 rounded-lg transition-colors" title="Delete purchase">
                           <Trash2 size={14} />
@@ -716,7 +783,7 @@ export default function Purchase() {
                     <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-white backdrop-blur-md border border-white/10 shadow-inner">
                       <FileText size={18} className="text-blue-300" />
                     </div>
-                    <div>
+                    <div className="flex flex-col justify-center">
                       <h3 className="text-sm font-black text-white leading-none mb-1">
                         {invoice.supplierName}
                       </h3>
@@ -729,15 +796,22 @@ export default function Purchase() {
                       </div>
                     </div>
                   </div>
-                  <span className={`relative z-10 inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${
-                    invoice.balanceAmount <= 0
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                      : invoice.paidAmount > 0
-                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                        : "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                  }`}>
-                    {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
-                  </span>
+                  <div className="relative z-10 shrink-0 flex items-center gap-2">
+                    <span className={`inline-flex items-center justify-center px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${invoice.balanceAmount <= 0
+                        ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                        : invoice.paidAmount > 0
+                          ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                          : "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                      }`}>
+                      {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
+                    </span>
+                    <button
+                      onClick={() => setSelectedPurchase(invoice)}
+                      className="p-1.5 text-blue-300 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                    >
+                      <Eye size={14} />
+                    </button>
+                  </div>
                 </div>
 
                 {/* Financial Summary */}
@@ -778,44 +852,45 @@ export default function Purchase() {
                           <div className="flex items-center gap-3">
                             <span className="text-slate-400 font-medium">{d.quantity} pcs</span>
                             <span className="font-bold text-slate-800">{money(d.quantity * d.unitCost)}</span>
+                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Actions Footer */}
+                <div className="grid grid-cols-3 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
+
+                  <button
+                    onClick={() => handleEdit(invoice)}
+                    className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
+                  >
+                    <Pencil size={15} />
+                    <span className="text-[9px] font-bold">Edit</span>
+                  </button>
+
+                  <button
+                    onClick={() => openPaymentModal(invoice)}
+                    className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50/50 transition-colors"
+                  >
+                    <CircleDollarSign size={15} />
+                    <span className="text-[9px] font-bold">Payments</span>
+                  </button>
+
+                  <button
+                    onClick={() => handleDelete(invoice.purchaseId)}
+                    className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors"
+                  >
+                    <Trash2 size={15} />
+                    <span className="text-[9px] font-bold">Delete</span>
+                  </button>
                 </div>
               </div>
-
-              {/* Actions Footer */}
-              <div className="grid grid-cols-3 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
-                <button 
-                  onClick={() => setSelectedPurchase(invoice)}
-                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-brand-accent hover:bg-blue-50/50 transition-colors"
-                >
-                  <Eye size={15} />
-                  <span className="text-[9px] font-bold">View</span>
-                </button>
-                
-                <button 
-                  onClick={() => handleEdit(invoice)}
-                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
-                >
-                  <Pencil size={15} />
-                  <span className="text-[9px] font-bold">Edit</span>
-                </button>
-
-                <button 
-                  onClick={() => handleDelete(invoice.purchaseId)}
-                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors"
-                >
-                  <Trash2 size={15} />
-                  <span className="text-[9px] font-bold">Delete</span>
-                </button>
-              </div>
-            </div>
-          </article>
-        ))
-      )}
-    </section>
+            </article>
+          ))
+        )}
+      </section>
 
       {/* =====================================================
           RECORD PURCHASE OVERLAY MODAL (Sliding Drawer Layout)
@@ -823,12 +898,12 @@ export default function Purchase() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? `Edit Purchase PUR-${editingId}` : 'Record Purchase'}
               </h3>
-              <button 
+              <button
                 onClick={() => setShowCreateForm(false)}
                 className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
               >
@@ -914,169 +989,177 @@ export default function Purchase() {
                   <span className="font-black text-base">₹{parseFloat((totalCost - (parseFloat(paidAmount) || 0)).toFixed(2))?.toLocaleString()}</span>
                 </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Paid Amount (₹)</label>
-                    <button
-                      type="button"
-                      onClick={() => setPaidAmount(totalCost)}
-                      className="text-[10px] font-bold text-brand-accent hover:text-blue-600 transition-colors"
-                    >
-                      [ Full Pay ]
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                    required
-                  />
-                </div>
-
-                {/* Payment Account Selection & Multi-Partner Split */}
-                <div className="bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-3">
-                  <div className="flex items-center justify-between">
-                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
-                      Payment Account / Partners
-                    </label>
-                    {accounts.length > 1 && (
-                      <button
-                        type="button"
-                        onClick={() => {
-                          const nextSplit = !isSplitPayment;
-                          setIsSplitPayment(nextSplit);
-                          if (nextSplit && paymentContributions.length === 0) {
-                            const amt = parseFloat(paidAmount) || 0;
-                            setPaymentContributions(
-                              accounts.map((a, i) => ({
-                                accountName: a.accountName,
-                                amount: i === 0 ? amt : 0
-                              }))
-                            );
-                          }
-                        }}
-                        className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors shadow-sm"
-                      >
-                        {isSplitPayment ? 'Single Account' : '👥 Split Across Partners'}
-                      </button>
-                    )}
-                  </div>
-
-                  {!isSplitPayment ? (
+                {!editingId ? (
+                  <>
                     <div>
-                      <select
-                        value={accountName}
-                        onChange={(e) => setAccountName(e.target.value)}
-                        className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all"
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Paid Amount (₹)</label>
+                        <button
+                          type="button"
+                          onClick={() => setPaidAmount(totalCost)}
+                          className="text-[10px] font-bold text-brand-accent hover:text-blue-600 transition-colors"
+                        >
+                          [ Full Pay ]
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        value={paidAmount}
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
                         required
-                      >
-                        {accounts.map(a => {
-                          const inHand = getAccountInHand(a.accountName);
-                          return (
-                            <option key={a.accountId} value={a.accountName}>
-                              {a.accountName} (In-Hand: ₹{inHand.toLocaleString()})
-                            </option>
-                          );
-                        })}
-                      </select>
+                      />
+                    </div>
 
-                      <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
-                        <span className="text-slate-500">Available In-Hand:</span>
-                        <span className={`font-mono ${getAccountInHand(accountName) <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}`}>
-                          ₹{getAccountInHand(accountName).toLocaleString()}
-                        </span>
+                    {/* Payment Account Selection & Multi-Partner Split */}
+                    <div className="bg-slate-50/90 rounded-2xl p-3 border border-slate-200/80 space-y-3">
+                      <div className="flex items-center justify-between">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest">
+                          Payment Account / Partner
+                        </label>
+                        {accounts.length > 1 && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const nextSplit = !isSplitPayment;
+                              setIsSplitPayment(nextSplit);
+                              if (nextSplit && paymentContributions.length === 0) {
+                                const amt = parseFloat(paidAmount) || 0;
+                                setPaymentContributions(
+                                  accounts.map((a, i) => ({
+                                    accountName: a.accountName,
+                                    amount: i === 0 ? amt : 0
+                                  }))
+                                );
+                              }
+                            }}
+                            className="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-blue-100 text-blue-700 hover:bg-blue-200 transition-colors shadow-sm"
+                          >
+                            {isSplitPayment ? 'Single Account' : '👥 Split Across Partner'}
+                          </button>
+                        )}
                       </div>
 
-                      {parseFloat(paidAmount) > getAccountInHand(accountName) && parseFloat(paidAmount) > 0 && (
-                        <div className="mt-2 p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold leading-tight">
-                          ⚠️ Insufficient In-Hand Cash (Available: ₹{getAccountInHand(accountName).toLocaleString()}). Please record partner investment first.
+                      {!isSplitPayment ? (
+                        <div>
+                          <select
+                            value={accountName}
+                            onChange={(e) => setAccountName(e.target.value)}
+                            className="w-full bg-white border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-900 font-bold transition-all"
+                            required
+                          >
+                            {accounts.map(a => {
+                              const inHand = getAccountInHand(a.accountName);
+                              return (
+                                <option key={a.accountId} value={a.accountName}>
+                                  {a.accountName} (In-Hand: ₹{inHand.toLocaleString()})
+                                </option>
+                              );
+                            })}
+                          </select>
+
+                          <div className="mt-2 flex items-center justify-between text-[11px] font-bold">
+                            <span className="text-slate-500">Available In-Hand:</span>
+                            <span className={`font-mono ${getAccountInHand(accountName) <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700'}`}>
+                              ₹{getAccountInHand(accountName).toLocaleString()}
+                            </span>
+                          </div>
+
+                          {parseFloat(paidAmount) > getAccountInHand(accountName) && parseFloat(paidAmount) > 0 && (
+                            <div className="mt-2 p-2 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-bold leading-tight">
+                              ⚠️ Insufficient In-Hand Cash (Available: ₹{getAccountInHand(accountName).toLocaleString()}). Please record partner investment first.
+                            </div>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="space-y-2">
+                          {paymentContributions.map((contrib, cIdx) => {
+                            const inHand = getAccountInHand(contrib.accountName);
+                            const isOver = parseFloat(contrib.amount) > inHand;
+                            return (
+                              <div key={cIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
+                                <div className="flex gap-2 items-center">
+                                  <select
+                                    value={contrib.accountName}
+                                    onChange={(e) => updateContribution(cIdx, 'accountName', e.target.value)}
+                                    className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
+                                  >
+                                    {accounts.map(a => (
+                                      <option key={a.accountId} value={a.accountName}>
+                                        {a.accountName}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <div className="relative w-1/2 flex items-center">
+                                    <span className="absolute left-2 text-xs font-bold text-slate-400">₹</span>
+                                    <input
+                                      type="number"
+                                      step="any"
+                                      value={contrib.amount}
+                                      onChange={(e) => updateContribution(cIdx, 'amount', e.target.value)}
+                                      className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 text-xs font-bold text-slate-900"
+                                      placeholder="Amount"
+                                    />
+                                    {paymentContributions.length > 1 && (
+                                      <button
+                                        type="button"
+                                        onClick={() => removeContributionRow(cIdx)}
+                                        className="ml-1 p-1 text-rose-500 hover:text-rose-700 rounded-md"
+                                      >
+                                        ✕
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="flex justify-between text-[10px] font-bold">
+                                  <span className="text-slate-400">Available: <span className={inHand <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700 font-mono'}>₹{inHand.toLocaleString()}</span></span>
+                                  {isOver && <span className="text-rose-600 font-bold">⚠️ Exceeds In-Hand</span>}
+                                </div>
+                              </div>
+                            );
+                          })}
+
+                          <div className="flex justify-between items-center pt-1 gap-2 flex-wrap">
+                            <div className="flex gap-2">
+                              <button
+                                type="button"
+                                onClick={addContributionRow}
+                                className="text-[10px] font-bold text-brand-accent hover:text-blue-700 flex items-center gap-1"
+                              >
+                                + Add Partner
+                              </button>
+                              {parseFloat(paidAmount) > 0 && paymentContributions.length > 1 && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    const total = parseFloat(paidAmount) || 0;
+                                    const split = Math.round((total / paymentContributions.length) * 100) / 100;
+                                    setPaymentContributions(paymentContributions.map((c, i) => ({
+                                      ...c,
+                                      amount: i === paymentContributions.length - 1 ? parseFloat((total - (split * (paymentContributions.length - 1))).toFixed(2)) : split
+                                    })));
+                                  }}
+                                  className="text-[10px] font-bold text-slate-500 hover:text-slate-800"
+                                >
+                                  [ Split Equally ]
+                                </button>
+                              )}
+                            </div>
+                            <div className="text-[11px] font-mono font-bold text-slate-700">
+                              Total Split: <span className={Math.abs(paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0) - parseFloat(paidAmount || 0)) < 0.01 ? 'text-emerald-600' : 'text-amber-600'}>
+                                ₹{paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0).toLocaleString()}
+                              </span> / ₹{parseFloat(paidAmount || 0).toLocaleString()}
+                            </div>
+                          </div>
                         </div>
                       )}
                     </div>
-                  ) : (
-                    <div className="space-y-2">
-                      {paymentContributions.map((contrib, cIdx) => {
-                        const inHand = getAccountInHand(contrib.accountName);
-                        const isOver = parseFloat(contrib.amount) > inHand;
-                        return (
-                          <div key={cIdx} className="bg-white p-2.5 rounded-xl border border-slate-200 space-y-1.5 shadow-sm">
-                            <div className="flex gap-2 items-center">
-                              <select
-                                value={contrib.accountName}
-                                onChange={(e) => updateContribution(cIdx, 'accountName', e.target.value)}
-                                className="w-1/2 bg-slate-50 border border-slate-200 rounded-lg px-2 py-1.5 text-xs font-bold text-slate-800"
-                              >
-                                {accounts.map(a => (
-                                  <option key={a.accountId} value={a.accountName}>
-                                    {a.accountName}
-                                  </option>
-                                ))}
-                              </select>
-                              <div className="relative w-1/2 flex items-center">
-                                <span className="absolute left-2 text-xs font-bold text-slate-400">₹</span>
-                                <input
-                                  type="number"
-                                  step="any"
-                                  value={contrib.amount}
-                                  onChange={(e) => updateContribution(cIdx, 'amount', e.target.value)}
-                                  className="w-full bg-slate-50 border border-slate-200 rounded-lg pl-5 pr-2 py-1.5 text-xs font-bold text-slate-900"
-                                  placeholder="Amount"
-                                />
-                                {paymentContributions.length > 1 && (
-                                  <button
-                                    type="button"
-                                    onClick={() => removeContributionRow(cIdx)}
-                                    className="ml-1 p-1 text-rose-500 hover:text-rose-700 rounded-md"
-                                  >
-                                    ✕
-                                  </button>
-                                )}
-                              </div>
-                            </div>
-                            <div className="flex justify-between text-[10px] font-bold">
-                              <span className="text-slate-400">Available: <span className={inHand <= 0 ? 'text-rose-600 font-black' : 'text-emerald-700 font-mono'}>₹{inHand.toLocaleString()}</span></span>
-                              {isOver && <span className="text-rose-600 font-bold">⚠️ Exceeds In-Hand</span>}
-                            </div>
-                          </div>
-                        );
-                      })}
-
-                      <div className="flex justify-between items-center pt-1 gap-2 flex-wrap">
-                        <div className="flex gap-2">
-                          <button
-                            type="button"
-                            onClick={addContributionRow}
-                            className="text-[10px] font-bold text-brand-accent hover:text-blue-700 flex items-center gap-1"
-                          >
-                            + Add Partner
-                          </button>
-                          {parseFloat(paidAmount) > 0 && paymentContributions.length > 1 && (
-                            <button
-                              type="button"
-                              onClick={() => {
-                                const total = parseFloat(paidAmount) || 0;
-                                const split = Math.round((total / paymentContributions.length) * 100) / 100;
-                                setPaymentContributions(paymentContributions.map((c, i) => ({
-                                  ...c,
-                                  amount: i === paymentContributions.length - 1 ? parseFloat((total - (split * (paymentContributions.length - 1))).toFixed(2)) : split
-                                })));
-                              }}
-                              className="text-[10px] font-bold text-slate-500 hover:text-slate-800"
-                            >
-                              [ Split Equally ]
-                            </button>
-                          )}
-                        </div>
-                        <div className="text-[11px] font-mono font-bold text-slate-700">
-                          Total Split: <span className={Math.abs(paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0) - parseFloat(paidAmount || 0)) < 0.01 ? 'text-emerald-600' : 'text-amber-600'}>
-                            ₹{paymentContributions.reduce((s, c) => s + (parseFloat(c.amount) || 0), 0).toLocaleString()}
-                          </span> / ₹{parseFloat(paidAmount || 0).toLocaleString()}
-                        </div>
-                      </div>
-                    </div>
-                  )}
-                </div>
+                  </>
+                ) : (
+                  <div className="mt-4 p-3 bg-blue-50 border border-blue-100 rounded-xl text-center">
+                    <p className="text-xs font-bold text-blue-800">To record payments for this purchase, please use the Payments button in the table actions.</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">
@@ -1087,11 +1170,11 @@ export default function Purchase() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
-                  {editingId ? <><Edit2 size={14}/> Update</> : <><CheckCircle size={14}/> Post</>}
+                  {editingId ? <><Edit2 size={14} /> Update</> : <><CheckCircle size={14} /> Post</>}
                 </button>
               </div>
             </form>
@@ -1134,13 +1217,12 @@ export default function Purchase() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">Payment Status:</span>
-                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${
-                  selectedPurchase.balanceAmount <= 0 
-                    ? 'bg-emerald-100 text-emerald-700' 
-                    : selectedPurchase.paidAmount > 0 
-                      ? 'bg-amber-100 text-amber-700' 
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${selectedPurchase.balanceAmount <= 0
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : selectedPurchase.paidAmount > 0
+                      ? 'bg-amber-100 text-amber-700'
                       : 'bg-rose-100 text-rose-700'
-                }`}>
+                  }`}>
                   {selectedPurchase.balanceAmount <= 0 ? "Paid" : selectedPurchase.paidAmount > 0 ? "Partial" : "Due"}
                 </span>
               </div>
@@ -1199,6 +1281,130 @@ export default function Purchase() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* =========================================================
+          PAYMENT HISTORY MODAL
+      ========================================================= */}
+      {showPaymentModal && paymentPurchase && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-pink-200/60 flex items-center justify-between bg-pink-50/30">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-black">
+                  <WalletCards size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Payment History</h3>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    {paymentPurchase.supplierName} • PUR-{paymentPurchase.purchaseId}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-800 p-2 rounded-full hover:bg-slate-200 transition-colors">
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-6">
+              {/* Payment Stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Bill</p>
+                  <p className="font-black text-slate-900">{money(paymentPurchase.totalAmount)}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                  <p className="text-[10px] uppercase font-bold text-emerald-600/70 mb-1">Paid Amount</p>
+                  <p className="font-black text-emerald-700">{money(paymentPurchase.paidAmount)}</p>
+                </div>
+                <div className={`p-3 rounded-xl border ${paymentPurchase.balanceAmount > 0 ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <p className={`text-[10px] uppercase font-bold mb-1 ${paymentPurchase.balanceAmount > 0 ? 'text-rose-600/70' : 'text-slate-400'}`}>Balance</p>
+                  <p className={`font-black ${paymentPurchase.balanceAmount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{money(paymentPurchase.balanceAmount)}</p>
+                </div>
+              </div>
+
+              {/* Add Payment Form */}
+              {paymentPurchase.balanceAmount > 0 && (
+                <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
+                  <div className="bg-blue-50/50 px-4 py-3 border-b border-blue-100">
+                    <h4 className="text-xs font-black text-blue-900 flex items-center gap-2">
+                      <Plus size={14} className="text-blue-600" /> Record New Payment
+                    </h4>
+                  </div>
+                  <form onSubmit={handleAddPayment} className="p-4 flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Amount (₹)</label>
+                        <input
+                          type="number" step="0.01" required
+                          value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                          placeholder={`Max: ${paymentPurchase.balanceAmount}`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Payment Account</label>
+                        <select
+                          required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                        >
+                          <option value="">Select Account</option>
+                          {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Notes (Optional)</label>
+                      <input
+                        type="text"
+                        value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                        placeholder="e.g. Paid by GPay"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20">
+                        <CheckCircle size={14} /> Save Payment
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Payments List */}
+              <div>
+                <h4 className="text-xs font-black text-slate-900 mb-3 uppercase tracking-wider">Payment Records</h4>
+                {payments.length === 0 ? (
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                    <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {payments.map(p => (
+                      <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-200 transition-colors group">
+                        <div className="flex flex-col">
+                          <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mt-0.5">
+                            <span>{formatDateDDMMYYYY(p.createdAt)}</span>
+                            <span>•</span>
+                            <span className="text-blue-600 bg-blue-50 px-1.5 rounded">{p.accountName}</span>
+                            {p.notes && <><span>•</span><span className="text-slate-500">{p.notes}</span></>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeletePayment(p.paymentId)}
+                          className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Delete Payment"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

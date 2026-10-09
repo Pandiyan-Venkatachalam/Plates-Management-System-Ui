@@ -7,8 +7,8 @@ import Swal from 'sweetalert2';
 
 export default function More() {
   const { user, apiRequest, logout } = useAuth();
-  const [activeSubTab, setActiveSubTab] = useState('partners');
-  const [partners, setPartners] = useState([]);
+  const [activeSubTab, setActiveSubTab] = useState('Partner');
+  const [Partner, setPartner] = useState([]);
   const [ledgers, setLedgers] = useState([]);
   const [accounts, setAccounts] = useState([]);
   const [audit, setAudit] = useState([]);
@@ -19,7 +19,7 @@ export default function More() {
   const [expenseForm, setExpenseForm] = useState({ amount: 0, desc: '', accountName: 'Cash' });
 
   const loadData = () => {
-    apiRequest('/partner').then(res => setPartners(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
+    apiRequest('/partner').then(res => setPartner(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
     apiRequest('/partnerledger').then(res => setLedgers(sortLatestFirst(res.data, ['ledgerId', 'id'], 'partnerledger'))).catch(console.error);
     apiRequest('/account').then(res => setAccounts(sortLatestFirst(res.data, ['accountId', 'id'], 'account'))).catch(console.error);
     apiRequest('/report/get-audit-history').then(res => setAudit(sortLatestFirst(res.data, ['auditId', 'id'], 'audit'))).catch(console.error);
@@ -87,7 +87,7 @@ export default function More() {
     try {
       Swal.fire({ title: 'Generating Backup...', allowOutsideClick: false, didOpen: () => Swal.showLoading() });
       const data = await apiRequest('/backup/download');
-      
+
       const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
@@ -97,11 +97,11 @@ export default function More() {
       link.click();
       document.body.removeChild(link);
       window.URL.revokeObjectURL(url);
-      
+
       const backupTime = new Date().toLocaleString();
       localStorage.setItem('vpms_last_backup', backupTime);
       setLastBackup(backupTime);
-      
+
       Swal.fire('Success', 'Backup downloaded successfully', 'success');
     } catch (err) {
       Swal.fire('Error', err.message || 'Failed to generate backup', 'error');
@@ -115,10 +115,10 @@ export default function More() {
       ========================================================= */}
       <section className="flex flex-col gap-1.5 sm:gap-2">
         <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
-            <span>Settings</span>
-            <ChevronRight size={10} className="shrink-0" />
-            <span className="text-slate-400 truncate">More Modules</span>
-          </div>
+          <span>Settings</span>
+          <ChevronRight size={10} className="shrink-0" />
+          <span className="text-slate-400 truncate">More Modules</span>
+        </div>
         <div className="flex justify-between items-center gap-2.5">
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900">
             More Management Modules
@@ -130,33 +130,33 @@ export default function More() {
           TABS
       ===================================================== */}
       <div className="flex gap-2 border-b border-slate-100 pb-2">
-        <button 
-          onClick={() => setActiveSubTab('partners')} 
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSubTab === 'partners' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
+        <button
+          onClick={() => setActiveSubTab('Partner')}
+          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSubTab === 'Partner' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
         >
-          Partners Equity
+          Partner Equity
         </button>
-        <button 
-          onClick={() => setActiveSubTab('expenses')} 
+        <button
+          onClick={() => setActiveSubTab('expenses')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSubTab === 'expenses' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
         >
           Expenses
         </button>
-        <button 
-          onClick={() => setActiveSubTab('audit')} 
+        <button
+          onClick={() => setActiveSubTab('audit')}
           className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${activeSubTab === 'audit' ? 'bg-slate-900 text-white shadow-sm' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-800'}`}
         >
           Audit Trail
         </button>
       </div>
 
-      {activeSubTab === 'partners' && (
+      {activeSubTab === 'Partner' && (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
           <div className="lg:col-span-2 space-y-4">
             <div className="bg-[#fff7f9] rounded-2xl p-4 shadow-sm border border-slate-100">
-              <h3 className="text-sm font-black text-slate-800 mb-3 uppercase tracking-widest">Partners Directory</h3>
+              <h3 className="text-sm font-black text-slate-800 mb-3 uppercase tracking-widest">Partner Directory</h3>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                {partners.map(p => (
+                {Partner.map(p => (
                   <div key={p.partnerId} className="bg-slate-50/50 border border-slate-100 p-4 rounded-xl hover:bg-slate-50 transition-colors">
                     <h4 className="text-sm font-bold text-slate-800">{p.partnerName}</h4>
                     <p className="text-slate-500 text-[10px] mt-1 font-mono">{p.contactPhone}</p>
@@ -167,7 +167,7 @@ export default function More() {
 
             <div className="bg-[#fff7f9] rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
               <div className="p-4 border-b border-slate-100">
-                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Partners Equity History</h3>
+                <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Partner Equity History</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-left border-collapse">
@@ -220,7 +220,7 @@ export default function More() {
                 <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Select Partner</label>
                 <select value={txForm.partnerId} onChange={(e) => setTxForm({ ...txForm, partnerId: e.target.value })} className="w-full bg-slate-50 border border-slate-100 rounded-xl px-4 py-2.5 text-xs text-slate-800 font-bold focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all" required>
                   <option value="">Select Partner</option>
-                  {partners.map(p => <option key={p.partnerId} value={p.partnerId}>{p.partnerName}</option>)}
+                  {Partner.map(p => <option key={p.partnerId} value={p.partnerId}>{p.partnerName}</option>)}
                 </select>
               </div>
               <div>

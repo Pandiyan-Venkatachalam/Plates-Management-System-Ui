@@ -13,7 +13,7 @@ const fmt = (val) => `\u20B9${Number(val || 0).toLocaleString('en-IN', { minimum
 export default function PartnerLedger() {
   const { apiRequest } = useAuth();
   const [ledgers, setLedgers] = useState([]);
-  const [partners, setPartners] = useState([]);
+  const [Partner, setPartner] = useState([]);
   const [accounts, setAccounts] = useState([]);
 
   // Form State
@@ -25,7 +25,7 @@ export default function PartnerLedger() {
     accountName: '',
     approvedByPartner: false
   });
-  
+
   const [editingId, setEditingId] = useState(null);
   const [viewItem, setViewItem] = useState(null);
   const [showCreateForm, setShowCreateForm] = useState(false);
@@ -33,7 +33,7 @@ export default function PartnerLedger() {
 
   const loadData = () => {
     apiRequest('/partnerledger').then(res => setLedgers(sortLatestFirst(res.data, ['ledgerId', 'id'], 'partnerledger'))).catch(console.error);
-    apiRequest('/partner').then(res => setPartners(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
+    apiRequest('/partner').then(res => setPartner(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
     apiRequest('/account').then(res => {
       const accs = Array.isArray(res.data) ? res.data : [];
       setAccounts(accs);
@@ -53,7 +53,7 @@ export default function PartnerLedger() {
   const openCreateModal = () => {
     setEditingId(null);
     setForm({
-      partnerId: partners.length > 0 ? partners[0].partnerId : '',
+      partnerId: Partner.length > 0 ? Partner[0].partnerId : '',
       transactionType: 'INVESTMENT',
       amount: '',
       description: '',
@@ -144,7 +144,7 @@ export default function PartnerLedger() {
       }
 
       setForm({
-        partnerId: partners.length > 0 ? partners[0].partnerId : '',
+        partnerId: Partner.length > 0 ? Partner[0].partnerId : '',
         transactionType: 'INVESTMENT',
         amount: '',
         description: '',
@@ -160,8 +160,8 @@ export default function PartnerLedger() {
   };
 
   const filteredLedgers = sortLatestFirst(
-    ledgers.filter(l => 
-      l.partnerName?.toLowerCase().includes(searchTerm.toLowerCase()) || 
+    ledgers.filter(l =>
+      l.partnerName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
       l.description?.toLowerCase().includes(searchTerm.toLowerCase())
     ),
     ['ledgerId', 'id'],
@@ -203,7 +203,7 @@ export default function PartnerLedger() {
           </p>
           <div className="mt-2">
             <span className="inline-block px-4 py-0.5 rounded bg-slate-900 text-white font-extrabold text-[11px] uppercase tracking-widest">
-              Partners Capital Ledger Report
+              Partner Capital Ledger Report
             </span>
           </div>
         </div>
@@ -239,36 +239,36 @@ export default function PartnerLedger() {
             <span className="text-slate-400 truncate">Capital Ledger</span>
           </div>
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
-            Partners Capital Ledger
+            Partner Capital Ledger
           </h1>
         </div>
         <div className="flex gap-2 shrink-0">
-          
-            <button
-              onClick={downloadCSV}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <Download size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Download CSV</span>
-            </button>
-          
-          
-            <button
-              onClick={handlePrint}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden xs:inline">Print Report</span>
-            </button>
-          
-          <button 
-              onClick={openCreateModal}
-              className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
-            >
-              <Plus size={14} strokeWidth={3} />
-              Post Transaction
-            </button>
-          </div>
+
+          <button
+            onClick={downloadCSV}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrint}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
+            onClick={openCreateModal}
+            className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+          >
+            <Plus size={14} strokeWidth={3} />
+            Post Transaction
+          </button>
+        </div>
       </section>
 
       {/* =====================================================
@@ -323,9 +323,8 @@ export default function PartnerLedger() {
                       </div>
                     </td>
                     <td className="px-5 py-3 print:text-center">
-                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-mono text-[10px] font-bold print:border print:px-1.5 print:py-0.5 ${
-                        l.transactionType === 'INVESTMENT' ? 'bg-emerald-50 text-emerald-600 print:text-emerald-700 print:border-emerald-200' : 'bg-rose-50 text-rose-600 print:text-rose-700 print:border-rose-200'
-                      }`}>
+                      <span className={`inline-flex items-center gap-1.5 px-2 py-1 rounded-md font-mono text-[10px] font-bold print:border print:px-1.5 print:py-0.5 ${l.transactionType === 'INVESTMENT' ? 'bg-emerald-50 text-emerald-600 print:text-emerald-700 print:border-emerald-200' : 'bg-rose-50 text-rose-600 print:text-rose-700 print:border-rose-200'
+                        }`}>
                         {l.transactionType}
                       </span>
                     </td>
@@ -408,11 +407,10 @@ export default function PartnerLedger() {
                       </div>
                     </div>
                   </div>
-                  <span className={`relative z-10 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${
-                    l.transactionType === 'INVESTMENT' 
-                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30' 
+                  <span className={`relative z-10 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${l.transactionType === 'INVESTMENT'
+                      ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
                       : 'bg-rose-500/20 text-rose-300 border-rose-500/30'
-                  }`}>
+                    }`}>
                     {l.transactionType}
                   </span>
                 </div>
@@ -420,11 +418,11 @@ export default function PartnerLedger() {
                 {/* Card Body Details */}
                 <div className="p-4 bg-white text-xs space-y-2 text-slate-600">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-400">Transaction Amount:</span> 
+                    <span className="font-bold text-slate-400">Transaction Amount:</span>
                     <span className="font-mono font-black text-sm text-slate-900">{fmt(l.amount)}</span>
                   </div>
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-400">Description:</span> 
+                    <span className="font-bold text-slate-400">Description:</span>
                     <span className="font-semibold text-slate-700">{l.description || '-'}</span>
                   </div>
                 </div>
@@ -492,19 +490,16 @@ export default function PartnerLedger() {
             {/* Body */}
             <div className="p-5 space-y-4">
               {/* Amount Highlight */}
-              <div className={`rounded-xl p-4 text-center border ${
-                viewItem.transactionType === 'INVESTMENT' 
-                  ? 'bg-emerald-50/70 border-emerald-200/70' 
+              <div className={`rounded-xl p-4 text-center border ${viewItem.transactionType === 'INVESTMENT'
+                  ? 'bg-emerald-50/70 border-emerald-200/70'
                   : 'bg-rose-50/70 border-rose-200/70'
-              }`}>
-                <span className={`text-[10px] font-black uppercase tracking-widest block mb-1 ${
-                  viewItem.transactionType === 'INVESTMENT' ? 'text-emerald-600' : 'text-rose-600'
                 }`}>
+                <span className={`text-[10px] font-black uppercase tracking-widest block mb-1 ${viewItem.transactionType === 'INVESTMENT' ? 'text-emerald-600' : 'text-rose-600'
+                  }`}>
                   {viewItem.transactionType}
                 </span>
-                <div className={`text-2xl font-black font-mono ${
-                  viewItem.transactionType === 'INVESTMENT' ? 'text-emerald-700' : 'text-rose-700'
-                }`}>
+                <div className={`text-2xl font-black font-mono ${viewItem.transactionType === 'INVESTMENT' ? 'text-emerald-700' : 'text-rose-700'
+                  }`}>
                   {fmt(viewItem.amount)}
                 </div>
               </div>
@@ -561,13 +556,13 @@ export default function PartnerLedger() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight flex items-center gap-2">
                 {editingId ? <Pencil size={16} className="text-amber-600" /> : <Plus size={16} className="text-brand-accent" />}
                 <span>{editingId ? 'Edit Partner Transaction' : 'Post Equity Transaction'}</span>
               </h3>
-              <button 
+              <button
                 onClick={() => { setShowCreateForm(false); setEditingId(null); }}
                 className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
               >
@@ -585,7 +580,7 @@ export default function PartnerLedger() {
                   required
                 >
                   <option value="">Select Partner</option>
-                  {partners.map(p => <option key={p.partnerId} value={p.partnerId}>{p.partnerName}</option>)}
+                  {Partner.map(p => <option key={p.partnerId} value={p.partnerId}>{p.partnerName}</option>)}
                 </select>
               </div>
 
@@ -652,7 +647,7 @@ export default function PartnerLedger() {
                     required
                   />
                   <label htmlFor="approvedByPartner" className="text-[10px] text-slate-500 font-bold select-none cursor-pointer uppercase tracking-widest">
-                    Confirm Partners' Approval Received
+                    Confirm Partner' Approval Received
                   </label>
                 </div>
               )}
@@ -665,8 +660,8 @@ export default function PartnerLedger() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
                   {editingId ? <CheckCircle2 size={14} /> : <Plus size={14} strokeWidth={3} />}
@@ -713,13 +708,12 @@ export default function PartnerLedger() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">Transaction Type:</span>
-                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${
-                  viewItem.transactionType === 'INVESTMENT'
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${viewItem.transactionType === 'INVESTMENT'
                     ? 'bg-emerald-100 text-emerald-700'
                     : viewItem.transactionType === 'WITHDRAWAL'
                       ? 'bg-rose-100 text-rose-700'
                       : 'bg-blue-100 text-blue-700'
-                }`}>
+                  }`}>
                   {viewItem.transactionType}
                 </span>
               </div>

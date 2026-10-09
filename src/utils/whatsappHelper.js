@@ -1,4 +1,4 @@
-// WhatsApp Notification & Alert Helper for Vinayaga Plates Partners
+// WhatsApp Notification & Alert Helper for Vinayaga Plates Partner
 import { Share } from '@capacitor/share';
 import { Capacitor } from '@capacitor/core';
 
@@ -126,29 +126,29 @@ export const createExpenseWhatsAppMessage = ({ desc, amount, accountName, handle
 
 // ── WhatsApp Notification Dispatcher (Silent Background API Delivery) ──
 
-export const sendWhatsAppNotificationToPartners = async (apiRequest, { message, eventType, referenceId, category, actionType, performedBy }) => {
+export const sendWhatsAppNotificationToPartner = async (apiRequest, { message, eventType, referenceId, category, actionType, performedBy }) => {
   try {
     if (!apiRequest || !message) return;
 
-    // 1. Silent Background API Broadcast to all active partners
+    // 1. Silent Background API Broadcast to all active Partner
     apiRequest('/notification/broadcast-whatsapp', {
       method: 'POST',
       body: JSON.stringify({ message, eventType: eventType || 'GENERAL' })
     })
-    .then(() => {
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
-      }
-    })
-    .catch(err => {
-      console.warn('Silent WhatsApp API broadcast warning:', err);
-      if (typeof window !== 'undefined') {
-        window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
-      }
-    });
+      .then(() => {
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
+        }
+      })
+      .catch(err => {
+        console.warn('Silent WhatsApp API broadcast warning:', err);
+        if (typeof window !== 'undefined') {
+          window.dispatchEvent(new CustomEvent('vpms_activity_update', { detail: { category, referenceId } }));
+        }
+      });
 
   } catch (e) {
-    console.error('Error in sendWhatsAppNotificationToPartners', e);
+    console.error('Error in sendWhatsAppNotificationToPartner', e);
   }
 };
 

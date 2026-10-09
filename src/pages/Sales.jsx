@@ -1,8 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { 
-  Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown, 
-  ChevronRight, FileText, CircleDollarSign, WalletCards, 
+import {
+  Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown,
+  ChevronRight, FileText, CircleDollarSign, WalletCards,
   TrendingUp, MoreHorizontal, Pencil, Eye, CheckCircle, Download, X
 } from 'lucide-react';
 import { Capacitor } from '@capacitor/core';
@@ -11,7 +11,7 @@ import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
 import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
 import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
-import { sendWhatsAppNotificationToPartners, createSalesWhatsAppMessage } from '../utils/whatsappHelper';
+import { sendWhatsAppNotificationToPartner, createSalesWhatsAppMessage } from '../utils/whatsappHelper';
 import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
 import DateInput from '../components/DateInput';
 
@@ -43,6 +43,12 @@ export default function Sales() {
   const [editingId, setEditingId] = useState(null);
   const [editingSaleDate, setEditingSaleDate] = useState(null);
   const [adjustment, setAdjustment] = useState(0);
+
+  // Payment Modal States
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentSale, setPaymentSale] = useState(null);
+  const [payments, setPayments] = useState([]);
+  const [newPayment, setNewPayment] = useState({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
 
   const loadData = () => {
     apiRequest('/sales').then(res => setSales(sortLatestFirst(res.data, ['saleId', 'id'], 'sales'))).catch(console.error);
@@ -76,7 +82,7 @@ export default function Sales() {
   const filteredSales = sortLatestFirst(
     sales.filter(s => {
       // Search filter
-      const matchesSearch = !search || 
+      const matchesSearch = !search ||
         (s.customerName && s.customerName.toLowerCase().includes(search.toLowerCase())) ||
         (s.saleId && `INV-${s.saleId}`.toLowerCase().includes(search.toLowerCase()));
 
@@ -142,8 +148,8 @@ export default function Sales() {
           })
         });
         markItemAsUpdated('sales', editingId);
-        
-        // Automated WhatsApp Notification to Partners
+
+        // Automated WhatsApp Notification to Partner
         const waMsg = createSalesWhatsAppMessage({
           saleId: editingId,
           customerName,
@@ -153,7 +159,7 @@ export default function Sales() {
           paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'PARTIAL',
           handledBy: 'Admin'
         });
-        sendWhatsAppNotificationToPartners(apiRequest, {
+        sendWhatsAppNotificationToPartner(apiRequest, {
           message: waMsg,
           eventType: 'SALES_UPDATE',
           referenceId: String(editingId),
@@ -170,7 +176,7 @@ export default function Sales() {
         });
         const createdSaleId = createRes?.data?.saleId || 'New';
 
-        // Automated WhatsApp Notification to Partners
+        // Automated WhatsApp Notification to Partner
         const waMsg = createSalesWhatsAppMessage({
           saleId: createdSaleId,
           customerName,
@@ -180,7 +186,7 @@ export default function Sales() {
           paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'UNPAID',
           handledBy: 'Admin'
         });
-        sendWhatsAppNotificationToPartners(apiRequest, {
+        sendWhatsAppNotificationToPartner(apiRequest, {
           message: waMsg,
           eventType: 'SALES_CREATE',
           referenceId: String(createdSaleId),
@@ -189,7 +195,7 @@ export default function Sales() {
           performedBy: 'Admin'
         });
 
-        Swal.fire('Success', 'Sale transaction recorded & Partners alerted via WhatsApp!', 'success');
+        Swal.fire('Success', 'Sale transaction recorded & Partner alerted via WhatsApp!', 'success');
       }
       setItems([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
       setCustomerId('');
@@ -235,6 +241,65 @@ export default function Sales() {
     try {
       await apiRequest(`/sales/${id}`, { method: 'DELETE' });
       Swal.fire('Deleted!', 'Invoice deleted!', 'success');
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const fetchPayments = async (saleId) => {
+    try {
+      const res = await apiRequest(`/sales/${saleId}/payments`);
+      setPayments(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openPaymentModal = (sale) => {
+    setPaymentSale(sale);
+    setPayments([]);
+    setNewPayment({ amount: '', accountId: accounts.length > 0 ? accounts[0].accountId : '', paymentMethod: 'CASH', notes: '' });
+    setShowPaymentModal(true);
+    fetchPayments(sale.saleId);
+  };
+
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    if (!newPayment.amount || newPayment.amount <= 0) {
+      Swal.fire('Error', 'Amount must be greater than zero', 'error');
+      return;
+    }
+    if (!newPayment.accountId) {
+      Swal.fire('Error', 'Please select a deposit account', 'error');
+      return;
+    }
+    try {
+      await apiRequest(`/sales/${paymentSale.saleId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: parseFloat(newPayment.amount),
+          accountId: parseInt(newPayment.accountId),
+          paymentMethod: newPayment.paymentMethod,
+          notes: newPayment.notes
+        })
+      });
+      Swal.fire('Success', 'Payment recorded', 'success');
+      setNewPayment({ ...newPayment, amount: '', notes: '' });
+      fetchPayments(paymentSale.saleId);
+      loadData(); // refresh sales table
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    if (!window.confirm("Are you sure you want to delete this payment?")) return;
+    try {
+      await apiRequest(`/sales/${paymentSale.saleId}/payments/${paymentId}`, {
+        method: 'DELETE'
+      });
+      fetchPayments(paymentSale.saleId);
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
@@ -297,7 +362,7 @@ export default function Sales() {
         paymentStatus: 'PAID',
         handledBy: 'Admin'
       });
-      sendWhatsAppNotificationToPartners(apiRequest, {
+      sendWhatsAppNotificationToPartner(apiRequest, {
         message: waMsg,
         eventType: 'SALES_PAYMENT',
         referenceId: String(s.saleId),
@@ -412,27 +477,27 @@ export default function Sales() {
             Invoice Management
           </h1>
         </div>
-          
+
         <div className="flex gap-2 shrink-0">
-          
-            <button
-              onClick={downloadCSV}
-              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
-            >
-              <Download size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Download CSV</span>
-            </button>
-          
-          
-            <button
-              onClick={handlePrint}
-              className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
-            >
-              <FileText size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Print Report</span>
-            </button>
-          
-          <button 
+
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+          >
+            <FileText size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
             onClick={() => {
               setEditingId(null);
               setCustomerId('');
@@ -455,7 +520,7 @@ export default function Sales() {
       ===================================================== */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
         {/* Total Invoices */}
-        <div 
+        <div
           onClick={() => setBalanceFilter('all')}
           role="button"
           tabIndex={0}
@@ -467,13 +532,13 @@ export default function Sales() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
               <FileText size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Invoices</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Invoices</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{filteredSales.length}</p>
         </div>
 
         {/* Total Sales */}
-        <div 
+        <div
           onClick={() => setBalanceFilter('all')}
           role="button"
           tabIndex={0}
@@ -485,13 +550,13 @@ export default function Sales() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
               <CircleDollarSign size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Sales</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Sales</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalSalesVal)}</p>
         </div>
 
         {/* Collected */}
-        <div 
+        <div
           onClick={() => setBalanceFilter(balanceFilter === 'paid' ? 'all' : 'paid')}
           role="button"
           tabIndex={0}
@@ -503,13 +568,13 @@ export default function Sales() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-100 text-indigo-600">
               <WalletCards size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br/>Collected</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Collected</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalCollectedVal)}</p>
         </div>
 
         {/* Outstanding */}
-        <div 
+        <div
           onClick={() => setBalanceFilter(balanceFilter === 'due' ? 'all' : 'due')}
           role="button"
           tabIndex={0}
@@ -521,7 +586,7 @@ export default function Sales() {
             <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
               <TrendingUp size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
             </div>
-            <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight">Outstanding<br/>Due</p>
+            <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight">Outstanding<br />Due</p>
           </div>
           <p className="text-base sm:text-2xl font-black text-white tracking-tight relative z-10">{money(totalDueVal)}</p>
         </div>
@@ -589,7 +654,7 @@ export default function Sales() {
           {/* Date Picker Range Inputs */}
           <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-10 sm:h-9 w-full sm:w-auto">
             <CalendarDays size={13} className="text-slate-400 hidden sm:block shrink-0" />
-            <DateInput 
+            <DateInput
               value={fromDate}
               onChange={e => {
                 setFromDate(e.target.value);
@@ -598,7 +663,7 @@ export default function Sales() {
               className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
             />
             <span className="text-slate-300 text-[10px] shrink-0">-</span>
-            <DateInput 
+            <DateInput
               value={toDate}
               onChange={e => {
                 setToDate(e.target.value);
@@ -660,33 +725,39 @@ export default function Sales() {
                     {money(s.balanceAmount)}
                   </td>
                   <td className="px-3 py-2 text-center whitespace-nowrap">
-                    <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${
-                      s.balanceAmount <= 0
+                    <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${s.balanceAmount <= 0
                         ? "bg-emerald-50 text-emerald-600 border border-emerald-200/60"
                         : s.paidAmount > 0
                           ? "bg-amber-50 text-amber-600 border border-amber-200/60"
                           : "bg-rose-50 text-rose-600 border border-rose-200/60"
-                    }`}>
+                      }`}>
                       {s.balanceAmount <= 0 ? "Paid" : s.paidAmount > 0 ? "Partial" : "Due"}
                     </span>
                   </td>
                   <td className="px-5 py-2 print:hidden">
                     <div className="flex justify-end items-center gap-1">
-                      <button 
+                      <button
                         onClick={() => setSelectedSale(s)}
                         className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-brand-accent transition-all hover:shadow-sm"
                         title="View details"
                       >
                         <Eye size={12} />
                       </button>
-                      <button 
+                      <button
                         onClick={() => handleEdit(s)}
                         className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-blue-500 transition-all hover:shadow-sm"
                         title="Edit details"
                       >
                         <Pencil size={12} />
                       </button>
-                      <button 
+                      <button
+                        onClick={() => openPaymentModal(s)}
+                        className="p-1.5 rounded-lg hover:bg-emerald-50 border border-transparent hover:border-emerald-100 text-slate-400 hover:text-emerald-500 transition-all hover:shadow-sm"
+                        title="Payment History"
+                      >
+                        <CircleDollarSign size={12} />
+                      </button>
+                      <button
                         onClick={() => handleDelete(s.saleId)}
                         className="p-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-100 text-slate-400 hover:text-rose-500 transition-all hover:shadow-sm"
                         title="Delete invoice"
@@ -741,22 +812,29 @@ export default function Sales() {
               {/* Effective Colored Card Header */}
               <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
                 <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
-                <div className="relative z-10">
+                <div className="relative z-10 flex flex-col justify-center">
                   <p className="font-black text-sm text-white leading-tight mb-1">{invoice.customerName}</p>
                   <div className="flex items-center gap-2">
                     <span className="font-mono text-[9px] font-bold text-blue-200 bg-white/10 border border-white/10 px-2 py-0.5 rounded-md backdrop-blur-md">INV-{invoice.saleId}</span>
                     <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(invoice.saleDate)}</span>
                   </div>
                 </div>
-                <span className={`relative z-10 shrink-0 inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${
-                  invoice.balanceAmount <= 0
-                    ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                    : invoice.paidAmount > 0
-                      ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                      : "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                }`}>
-                  {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
-                </span>
+                <div className="relative z-10 shrink-0 flex items-center gap-2">
+                  <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${invoice.balanceAmount <= 0
+                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      : invoice.paidAmount > 0
+                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                        : "bg-rose-500/20 text-rose-300 border-rose-500/30"
+                    }`}>
+                    {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
+                  </span>
+                  <button
+                    onClick={() => setSelectedSale(invoice)}
+                    className="p-1.5 text-blue-300 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
+                  >
+                    <Eye size={14} />
+                  </button>
+                </div>
               </div>
 
               {/* Financial Summary */}
@@ -804,15 +882,8 @@ export default function Sales() {
 
               {/* Actions */}
               <div className="grid grid-cols-4 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
-                <button 
-                  onClick={() => setSelectedSale(invoice)}
-                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-brand-accent hover:bg-blue-50/50 transition-colors"
-                >
-                  <Eye size={15} />
-                  <span className="text-[9px] font-bold">View</span>
-                </button>
-                
-                <button 
+
+                <button
                   onClick={() => handleEdit(invoice)}
                   className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
                 >
@@ -820,7 +891,15 @@ export default function Sales() {
                   <span className="text-[9px] font-bold">Edit</span>
                 </button>
 
-                <button 
+                <button
+                  onClick={() => openPaymentModal(invoice)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50/50 transition-colors"
+                >
+                  <CircleDollarSign size={15} />
+                  <span className="text-[9px] font-bold">Payments</span>
+                </button>
+
+                <button
                   onClick={() => handleDelete(invoice.saleId)}
                   className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors"
                 >
@@ -829,7 +908,7 @@ export default function Sales() {
                 </button>
 
                 {invoice.balanceAmount > 0 ? (
-                  <button 
+                  <button
                     onClick={() => handleCollectPayment(invoice)}
                     className="flex flex-col items-center justify-center gap-1 py-3 bg-brand-accent/10 text-brand-accent hover:bg-brand-accent hover:text-white transition-colors"
                   >
@@ -854,12 +933,12 @@ export default function Sales() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? `Edit Invoice INV-${editingId}` : 'Create Sale Invoice'}
               </h3>
-              <button 
+              <button
                 onClick={() => setShowCreateForm(false)}
                 className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
               >
@@ -987,37 +1066,47 @@ export default function Sales() {
                   <span className="font-black text-base">₹{parseFloat(balanceDue.toFixed(2))?.toLocaleString()}</span>
                 </div>
 
-                <div>
-                  <div className="flex justify-between items-center mb-1.5">
-                    <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collected Amount (₹)</label>
-                    <button
-                      type="button"
-                      onClick={() => setPaidAmount(parseFloat(finalTotal.toFixed(2)))}
-                      className="text-[10px] font-bold text-brand-accent hover:text-blue-600 transition-colors"
-                    >
-                      [ Full Pay ]
-                    </button>
-                  </div>
-                  <input
-                    type="number"
-                    value={paidAmount}
-                    onChange={(e) => setPaidAmount(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                    required
-                  />
-                </div>
+                {!editingId && (
+                  <>
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collected Amount (₹)</label>
+                        <button
+                          type="button"
+                          onClick={() => setPaidAmount(parseFloat(finalTotal.toFixed(2)))}
+                          className="text-[10px] font-bold text-brand-accent hover:text-blue-600 transition-colors"
+                        >
+                          [ Full Pay ]
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        value={paidAmount}
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                        required
+                      />
+                    </div>
 
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Deposit Account</label>
-                  <select
-                    value={accountName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
-                    required
-                  >
-                    {accounts.map(a => <option key={a.accountId} value={a.accountName}>{a.accountName}</option>)}
-                  </select>
-                </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Deposit Account</label>
+                      <select
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                        required
+                      >
+                        {accounts.map(a => <option key={a.accountId} value={a.accountName}>{a.accountName}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {editingId && (
+                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center gap-2">
+                    <WalletCards size={16} className="text-blue-600" />
+                    <p className="text-xs font-bold text-blue-700">Payments are managed in the Payment History modal.</p>
+                  </div>
+                )}
               </div>
 
               <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">
@@ -1028,11 +1117,11 @@ export default function Sales() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
-                  {editingId ? <><Edit2 size={14}/> Update</> : <><CheckCircle size={14}/> Post Sale</>}
+                  {editingId ? <><Edit2 size={14} /> Update</> : <><CheckCircle size={14} /> Post Sale</>}
                 </button>
               </div>
             </form>
@@ -1075,13 +1164,12 @@ export default function Sales() {
               </div>
               <div className="flex justify-between">
                 <span className="text-slate-500 font-bold">Payment Status:</span>
-                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${
-                  selectedSale.paymentStatus === 'PAID' 
-                    ? 'bg-emerald-100 text-emerald-700' 
-                    : selectedSale.paidAmount > 0 
-                      ? 'bg-amber-100 text-amber-700' 
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${selectedSale.paymentStatus === 'PAID'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : selectedSale.paidAmount > 0
+                      ? 'bg-amber-100 text-amber-700'
                       : 'bg-rose-100 text-rose-700'
-                }`}>
+                  }`}>
                   {selectedSale.paymentStatus}
                 </span>
               </div>
@@ -1146,6 +1234,131 @@ export default function Sales() {
               >
                 Close
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          PAYMENT HISTORY MODAL
+      ========================================================= */}
+      {showPaymentModal && paymentSale && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            <div className="p-5 border-b border-pink-200/60 flex items-center justify-between bg-pink-50/30">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-black">
+                  <WalletCards size={20} />
+                </div>
+                <div>
+                  <h3 className="text-base font-black text-slate-900">Payment History</h3>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                    {paymentSale.customerName} • INV-{paymentSale.saleId}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-800 p-2 rounded-full hover:bg-slate-200 transition-colors">
+                ✕
+              </button>
+            </div>
+
+            <div className="p-5 overflow-y-auto flex-1 space-y-6">
+              {/* Payment Stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
+                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Bill</p>
+                  <p className="font-black text-slate-900">{money(paymentSale.totalAmount)}</p>
+                </div>
+                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
+                  <p className="text-[10px] uppercase font-bold text-emerald-600/70 mb-1">Collected</p>
+                  <p className="font-black text-emerald-700">{money(paymentSale.paidAmount)}</p>
+                </div>
+                <div className={`p-3 rounded-xl border ${paymentSale.balanceAmount > 0 ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
+                  <p className={`text-[10px] uppercase font-bold mb-1 ${paymentSale.balanceAmount > 0 ? 'text-rose-600/70' : 'text-slate-400'}`}>Balance</p>
+                  <p className={`font-black ${paymentSale.balanceAmount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{money(paymentSale.balanceAmount)}</p>
+                </div>
+              </div>
+
+              {/* Add Payment Form */}
+              {paymentSale.balanceAmount > 0 && (
+                <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
+                  <div className="bg-blue-50/50 px-4 py-3 border-b border-blue-100">
+                    <h4 className="text-xs font-black text-blue-900 flex items-center gap-2">
+                      <Plus size={14} className="text-blue-600" /> Record New Payment
+                    </h4>
+                  </div>
+                  <form onSubmit={handleAddPayment} className="p-4 flex flex-col gap-4">
+                    <div className="grid grid-cols-2 gap-4">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Amount (₹)</label>
+                        <input
+                          type="number" step="0.01" required
+                          value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                          placeholder={`Max: ${paymentSale.balanceAmount}`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Deposit Account</label>
+                        <select
+                          required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                        >
+                          <option value="">Select Account</option>
+                          {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
+                        </select>
+                      </div>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Notes (Optional)</label>
+                      <input
+                        type="text"
+                        value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                        placeholder="e.g. Paid by GPay"
+                      />
+                    </div>
+                    <div className="flex justify-end">
+                      <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20">
+                        <CheckCircle size={14} /> Save Payment
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Payments List */}
+              <div>
+                <h4 className="text-xs font-black text-slate-900 mb-3 uppercase tracking-wider">Payment Records</h4>
+                {payments.length === 0 ? (
+                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
+                    <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-2">
+                    {payments.map(p => (
+                      <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-200 transition-colors group">
+                        <div className="flex flex-col">
+                          <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mt-0.5">
+                            <span>{formatDateDDMMYYYY(p.createdAt)}</span>
+                            <span>•</span>
+                            <span className="text-blue-600 bg-blue-50 px-1.5 rounded">{p.accountName}</span>
+                            {p.notes && <><span>•</span><span className="text-slate-500">{p.notes}</span></>}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeletePayment(p.paymentId)}
+                          className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          title="Delete Payment"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

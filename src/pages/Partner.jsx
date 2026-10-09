@@ -10,7 +10,7 @@ import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function Partner() {
   const { apiRequest } = useAuth();
-  const [partners, setPartners] = useState([]);
+  const [Partner, setPartner] = useState([]);
   const [form, setForm] = useState({ name: '', phone: '' });
   const [editingId, setEditingId] = useState(null);
 
@@ -18,7 +18,7 @@ export default function Partner() {
   const [search, setSearch] = useState('');
 
   const loadData = () => {
-    apiRequest('/partner').then(res => setPartners(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
+    apiRequest('/partner').then(res => setPartner(sortLatestFirst(res.data, ['partnerId', 'id'], 'partner'))).catch(console.error);
   };
 
   useEffect(() => {
@@ -81,8 +81,8 @@ export default function Partner() {
     }
   };
 
-  const filteredPartners = sortLatestFirst(
-    partners.filter(p => 
+  const filteredPartner = sortLatestFirst(
+    Partner.filter(p =>
       p.partnerName?.toLowerCase().includes(search.toLowerCase()) ||
       p.contactPhone?.includes(search)
     ),
@@ -93,14 +93,14 @@ export default function Partner() {
   const downloadCSV = async () => {
     const rows = [
       ['ID', 'Partner Name', 'Phone Number'],
-      ...filteredPartners.map(p => [
+      ...filteredPartner.map(p => [
         `PART-${p.partnerId}`,
         p.partnerName || 'Unknown',
         p.contactPhone || 'N/A'
       ])
     ];
     const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
-    const filename = `Partners_Report_${new Date().getTime()}.csv`;
+    const filename = `Partner_Report_${new Date().getTime()}.csv`;
     await downloadCsvCrossPlatform(csv, filename);
   };
 
@@ -123,7 +123,7 @@ export default function Partner() {
           </p>
           <div className="mt-2">
             <span className="inline-block px-4 py-0.5 rounded bg-slate-900 text-white font-extrabold text-[11px] uppercase tracking-widest">
-              Partners Directory Report
+              Partner Directory Report
             </span>
           </div>
         </div>
@@ -135,8 +135,8 @@ export default function Partner() {
             <span className="text-[11px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
           </div>
           <div className="px-2 py-0.5">
-            <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Registered Partners</span>
-            <span className="text-[11px] font-black text-slate-900">{filteredPartners.length} Partners</span>
+            <span className="block text-[8px] font-extrabold text-slate-500 uppercase tracking-wider">Total Registered Partner</span>
+            <span className="text-[11px] font-black text-slate-900">{filteredPartner.length} Partner</span>
           </div>
         </div>
       </div>
@@ -152,43 +152,43 @@ export default function Partner() {
           <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
             <span>Partner Management</span>
             <ChevronRight size={10} className="shrink-0" />
-            <span className="text-slate-400 truncate">Partners Directory</span>
+            <span className="text-slate-400 truncate">Partner Directory</span>
           </div>
           <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
             Partner Profiles
           </h1>
         </div>
         <div className="flex gap-2 shrink-0">
-          
-            <button
-              onClick={downloadCSV}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <Download size={14} className="text-slate-400" />
-              <span className="hidden xs:inline">Download CSV</span>
-            </button>
-          
-          
-            <button
-              onClick={handlePrint}
-              className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
-            >
-              <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
-              <span className="hidden xs:inline">Print Report</span>
-            </button>
-          
-          <button 
-              onClick={() => {
-                setEditingId(null);
-                setForm({ name: '', phone: '' });
-                setShowCreateForm(true);
-              }}
-              className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
-            >
-              <Plus size={14} strokeWidth={3} />
-              New Partner
-            </button>
-          </div>
+
+          <button
+            onClick={downloadCSV}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrint}
+            className="bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-600 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition-all shadow-sm flex items-center gap-1.5"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5" /><rect x="6" y="14" width="12" height="8" rx="1" /></svg>
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setForm({ name: '', phone: '' });
+              setShowCreateForm(true);
+            }}
+            className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+          >
+            <Plus size={14} strokeWidth={3} />
+            New Partner
+          </button>
+        </div>
       </section>
 
       {/* =====================================================
@@ -222,28 +222,28 @@ export default function Partner() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {filteredPartners.length === 0 ? (
+              {filteredPartner.length === 0 ? (
                 <tr>
                   <td colSpan="4" className="px-5 py-8 text-center text-slate-400 text-sm">
-                    No partners found.
+                    No Partner found.
                   </td>
                 </tr>
               ) : (
-                filteredPartners.map((p) => (
+                filteredPartner.map((p) => (
                   <tr key={p.partnerId} className="hover:bg-slate-50/80 transition-colors group">
                     <td className="px-5 py-3 font-mono font-bold text-[10px] text-slate-500">PART-{p.partnerId}</td>
                     <td className="px-5 py-3 font-bold text-slate-800 text-xs">{p.partnerName}</td>
                     <td className="px-5 py-3 font-mono text-xs text-slate-600">{p.contactPhone || 'N/A'}</td>
                     <td className="px-5 py-3 text-right print:hidden">
                       <div className="flex justify-end items-center gap-1">
-                        <button 
+                        <button
                           onClick={() => handleEdit(p)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-slate-100 transition-colors"
                           title="Edit partner"
                         >
                           <Pencil size={14} />
                         </button>
-                        <button 
+                        <button
                           onClick={() => handleDelete(p.partnerId)}
                           className="p-1.5 rounded-lg text-slate-400 hover:text-rose-600 hover:bg-slate-100 transition-colors"
                           title="Delete partner"
@@ -264,12 +264,12 @@ export default function Partner() {
           MOBILE INVOICE CARDS
       ===================================================== */}
       <section className="space-y-3.5 lg:hidden">
-        {filteredPartners.length === 0 ? (
+        {filteredPartner.length === 0 ? (
           <div className="bg-[#fff7f9] rounded-2xl p-6 text-center text-slate-400 text-sm border border-slate-100 shadow-sm">
-            No partners found.
+            No Partner found.
           </div>
         ) : (
-          filteredPartners.map((p) => (
+          filteredPartner.map((p) => (
             <article key={p.partnerId} className="p-[1px] rounded-2xl bg-gradient-to-br from-blue-500/30 via-slate-200 to-indigo-500/30 shadow-md shadow-slate-200/60 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden">
               <div className="bg-[#fff7f9] rounded-2xl overflow-hidden flex flex-col h-full">
                 {/* Effective Colored Card Header */}
@@ -296,21 +296,21 @@ export default function Partner() {
                 {/* Card Body Details */}
                 <div className="p-4 bg-white text-xs space-y-2 text-slate-600">
                   <div className="flex justify-between items-center">
-                    <span className="font-bold text-slate-400">Contact Phone:</span> 
+                    <span className="font-bold text-slate-400">Contact Phone:</span>
                     <span className="font-mono font-bold text-slate-800 bg-slate-50 px-2 py-0.5 rounded-md border border-slate-100">{p.contactPhone || 'N/A'}</span>
                   </div>
                 </div>
 
                 {/* Actions Footer */}
                 <div className="grid grid-cols-2 bg-slate-50/70 border-t border-slate-100 divide-x divide-slate-100">
-                  <button 
+                  <button
                     onClick={() => handleEdit(p)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-blue-600 hover:bg-blue-50/50"
                   >
                     <Pencil size={15} />
                     <span className="text-[9px] font-bold">Edit</span>
                   </button>
-                  <button 
+                  <button
                     onClick={() => handleDelete(p.partnerId)}
                     className="flex flex-col items-center justify-center gap-1 py-3 transition-colors text-slate-500 hover:text-rose-600 hover:bg-rose-50/50"
                   >
@@ -330,12 +330,12 @@ export default function Partner() {
       {showCreateForm && (
         <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
           <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
-            
+
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
                 {editingId ? 'Edit Partner' : 'Register Partner'}
               </h3>
-              <button 
+              <button
                 onClick={() => {
                   setShowCreateForm(false);
                   setEditingId(null);
@@ -381,8 +381,8 @@ export default function Partner() {
                 >
                   Cancel
                 </button>
-                <button 
-                  type="submit" 
+                <button
+                  type="submit"
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
                   <Plus size={14} strokeWidth={3} />
