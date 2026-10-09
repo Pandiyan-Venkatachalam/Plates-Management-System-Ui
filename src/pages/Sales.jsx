@@ -807,81 +807,84 @@ export default function Sales() {
         </div>
 
         {filteredSales.map((invoice) => (
-          <article key={invoice.saleId} className="p-[1px] rounded-2xl bg-gradient-to-br from-blue-500/30 via-slate-200 to-indigo-500/30 shadow-md shadow-slate-200/60 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden">
-            <div className="bg-[#fff7f9] rounded-2xl overflow-hidden flex flex-col h-full">
-              {/* Effective Colored Card Header */}
-              <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
-                <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
-                <div className="relative z-10 flex flex-col justify-center">
-                  <p className="font-black text-sm text-white leading-tight mb-1">{invoice.customerName}</p>
-                  <div className="flex items-center gap-2">
-                    <span className="font-mono text-[9px] font-bold text-blue-200 bg-white/10 border border-white/10 px-2 py-0.5 rounded-md backdrop-blur-md">INV-{invoice.saleId}</span>
-                    <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(invoice.saleDate)}</span>
-                  </div>
-                </div>
-                <div className="relative z-10 shrink-0 flex items-center gap-2">
-                  <span className={`inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${invoice.balanceAmount <= 0
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
-                      : invoice.paidAmount > 0
-                        ? "bg-amber-500/20 text-amber-300 border-amber-500/30"
-                        : "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                    }`}>
-                    {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
-                  </span>
-                  <button
-                    onClick={() => setSelectedSale(invoice)}
-                    className="p-1.5 text-blue-300 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors"
-                  >
-                    <Eye size={14} />
-                  </button>
+          <article key={invoice.saleId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+            {/* Header */}
+            <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
+              <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex flex-col justify-center relative z-10">
+                <p className="font-bold text-sm text-white leading-tight mb-1">{invoice.customerName}</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold text-slate-300 bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">INV-{invoice.saleId}</span>
+                  <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(invoice.saleDate)}</span>
                 </div>
               </div>
-
-              {/* Financial Summary */}
-              <div className="grid grid-cols-3 gap-2 px-4 py-3.5 bg-white">
-                <div>
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total</p>
-                  <p className="mt-0.5 text-sm font-black text-slate-900">{money(invoice.totalAmount)}</p>
-                </div>
-                <div className="border-l border-slate-100 pl-3">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Paid</p>
-                  <p className="mt-0.5 text-sm font-bold text-slate-600">{money(invoice.paidAmount)}</p>
-                  {invoice.paidAmount > 0 && invoice.accountName && (
-                    <span className="text-[8px] font-bold text-blue-600 block truncate">({invoice.accountName})</span>
-                  )}
-                </div>
-                <div className="border-l border-slate-100 pl-3">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Balance</p>
-                  <p className={`mt-0.5 text-sm font-black ${invoice.balanceAmount > 0 ? "text-rose-500" : "text-emerald-500"}`}>{money(invoice.balanceAmount)}</p>
-                </div>
+              <div className="shrink-0 flex items-center gap-2 relative z-10">
+                <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-wider ${invoice.balanceAmount <= 0
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : invoice.paidAmount > 0
+                      ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                      : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                  }`}>
+                  {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
+                </span>
               </div>
+            </div>
 
-              {/* Items Summary */}
-              <div className="mx-4 mb-3.5 rounded-xl bg-slate-50 border border-slate-100 p-3">
-                <div className="flex items-center justify-between mb-2">
-                  <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Order Items</p>
-                  <p className="text-[9px] font-bold text-slate-500">
+            {/* Financial Summary */}
+            <div className="grid grid-cols-3 px-4 py-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total</p>
+                <p className="text-sm font-black text-slate-900">{money(invoice.totalAmount)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Paid</p>
+                <p className="text-sm font-black text-slate-700">{money(invoice.paidAmount)}</p>
+                {invoice.paidAmount > 0 && invoice.accountName && (
+                  <span className="text-[9px] font-bold text-blue-600 block truncate leading-tight">({invoice.accountName})</span>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Balance</p>
+                <p className={`text-sm font-black ${invoice.balanceAmount > 0 ? "text-rose-600" : "text-emerald-600"}`}>{money(invoice.balanceAmount)}</p>
+              </div>
+            </div>
+
+            {/* Items Summary */}
+            <div className="px-4 pb-3">
+              <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/50">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Items</p>
+                  <p className="text-[10px] font-bold text-slate-500">
                     {invoice.details?.reduce((sum, d) => sum + d.quantity, 0) || 0} Total Qty
                   </p>
                 </div>
-                <div className="space-y-1.5">
+                <div className="space-y-2.5">
                   {invoice.details?.map((d, idx) => {
                     const sizeStr = getProductSizeStr(d.productId);
                     return (
-                      <div key={idx} className="flex items-center justify-between text-[11px]">
+                      <div key={idx} className="flex items-center justify-between text-xs">
                         <span className="font-bold text-slate-700">{sizeStr ? sizeStr.replace(/[^0-9]/g, '') : '?'}" Areca Plate</span>
                         <div className="flex items-center gap-3">
                           <span className="text-slate-400 font-medium">{d.quantity} pcs</span>
-                          <span className="font-bold text-slate-800">{money(d.quantity * d.unitPrice)}</span>
+                          <span className="font-black text-slate-900">{money(d.quantity * d.unitPrice)}</span>
                         </div>
                       </div>
                     );
                   })}
                 </div>
               </div>
+            </div>
 
-              {/* Actions */}
-              <div className="grid grid-cols-4 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
+            {/* Actions */}
+            <div className="mt-auto grid grid-cols-5 border-t border-slate-100">
+
+                <button
+                  onClick={() => setSelectedSale(invoice)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
+                >
+                  <Eye size={15} />
+                  <span className="text-[9px] font-bold">View</span>
+                </button>
 
                 <button
                   onClick={() => handleEdit(invoice)}
@@ -922,8 +925,7 @@ export default function Sales() {
                   </div>
                 )}
               </div>
-            </div>
-          </article>
+            </article>
         ))}
       </section>
 
@@ -1262,47 +1264,45 @@ export default function Sales() {
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto flex-1 space-y-6">
+            <div className="p-5 overflow-y-auto flex-1">
               {/* Payment Stats */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-100">
-                  <p className="text-[10px] uppercase font-bold text-slate-400 mb-1">Total Bill</p>
+              <div className="grid grid-cols-3 divide-x divide-pink-200/60 border-y border-pink-200/60 py-4 mb-6">
+                <div className="text-center">
+                  <p className="text-[10px] uppercase font-bold text-pink-500 mb-1">Total Bill</p>
                   <p className="font-black text-slate-900">{money(paymentSale.totalAmount)}</p>
                 </div>
-                <div className="bg-emerald-50 p-3 rounded-xl border border-emerald-100">
-                  <p className="text-[10px] uppercase font-bold text-emerald-600/70 mb-1">Collected</p>
+                <div className="text-center">
+                  <p className="text-[10px] uppercase font-bold text-emerald-600 mb-1">Collected</p>
                   <p className="font-black text-emerald-700">{money(paymentSale.paidAmount)}</p>
                 </div>
-                <div className={`p-3 rounded-xl border ${paymentSale.balanceAmount > 0 ? 'bg-rose-50 border-rose-100' : 'bg-slate-50 border-slate-100'}`}>
-                  <p className={`text-[10px] uppercase font-bold mb-1 ${paymentSale.balanceAmount > 0 ? 'text-rose-600/70' : 'text-slate-400'}`}>Balance</p>
-                  <p className={`font-black ${paymentSale.balanceAmount > 0 ? 'text-rose-700' : 'text-slate-900'}`}>{money(paymentSale.balanceAmount)}</p>
+                <div className="text-center">
+                  <p className={`text-[10px] uppercase font-bold mb-1 ${paymentSale.balanceAmount > 0 ? 'text-rose-500' : 'text-slate-500'}`}>Balance</p>
+                  <p className={`font-black ${paymentSale.balanceAmount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{money(paymentSale.balanceAmount)}</p>
                 </div>
               </div>
 
               {/* Add Payment Form */}
               {paymentSale.balanceAmount > 0 && (
-                <div className="bg-white border border-blue-100 rounded-xl overflow-hidden shadow-sm">
-                  <div className="bg-blue-50/50 px-4 py-3 border-b border-blue-100">
-                    <h4 className="text-xs font-black text-blue-900 flex items-center gap-2">
-                      <Plus size={14} className="text-blue-600" /> Record New Payment
-                    </h4>
-                  </div>
-                  <form onSubmit={handleAddPayment} className="p-4 flex flex-col gap-4">
+                <div className="mb-6">
+                  <h4 className="text-xs font-black text-slate-900 mb-3 flex items-center gap-2">
+                    <Plus size={14} className="text-pink-600" /> Record New Payment
+                  </h4>
+                  <form onSubmit={handleAddPayment} className="flex flex-col gap-4">
                     <div className="grid grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Amount (₹)</label>
+                        <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Amount (₹)</label>
                         <input
                           type="number" step="0.01" required
                           value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                          className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-pink-300"
                           placeholder={`Max: ${paymentSale.balanceAmount}`}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Deposit Account</label>
+                        <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Deposit Account</label>
                         <select
                           required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                          className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold"
                         >
                           <option value="">Select Account</option>
                           {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
@@ -1310,16 +1310,16 @@ export default function Sales() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1.5">Notes (Optional)</label>
+                      <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Notes (Optional)</label>
                       <input
                         type="text"
                         value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                        className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-pink-300"
                         placeholder="e.g. Paid by GPay"
                       />
                     </div>
-                    <div className="flex justify-end">
-                      <button type="submit" className="bg-blue-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20">
+                    <div className="flex justify-end mt-1">
+                      <button type="submit" className="bg-pink-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-pink-700 transition-colors flex items-center gap-2 shadow-md shadow-pink-600/20">
                         <CheckCircle size={14} /> Save Payment
                       </button>
                     </div>
@@ -1329,27 +1329,27 @@ export default function Sales() {
 
               {/* Payments List */}
               <div>
-                <h4 className="text-xs font-black text-slate-900 mb-3 uppercase tracking-wider">Payment Records</h4>
+                <h4 className="text-xs font-black text-slate-900 mb-2 uppercase tracking-wider">Payment Records</h4>
                 {payments.length === 0 ? (
-                  <div className="text-center py-6 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
-                    <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
+                  <div className="text-center py-4">
+                    <p className="text-xs font-bold text-pink-400">No payments recorded yet.</p>
                   </div>
                 ) : (
-                  <div className="space-y-2">
+                  <div className="flex flex-col">
                     {payments.map(p => (
-                      <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-200 bg-white hover:border-blue-200 transition-colors group">
+                      <div key={p.paymentId} className="flex items-center justify-between py-3 border-b border-pink-200/50 group last:border-0">
                         <div className="flex flex-col">
                           <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-400 mt-0.5">
+                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 mt-0.5">
                             <span>{formatDateDDMMYYYY(p.createdAt)}</span>
-                            <span>•</span>
-                            <span className="text-blue-600 bg-blue-50 px-1.5 rounded">{p.accountName}</span>
-                            {p.notes && <><span>•</span><span className="text-slate-500">{p.notes}</span></>}
+                            <span className="text-pink-300">•</span>
+                            <span className="text-pink-700 bg-pink-100 px-1.5 rounded">{p.accountName}</span>
+                            {p.notes && <><span className="text-pink-300">•</span><span className="text-slate-500">{p.notes}</span></>}
                           </div>
                         </div>
                         <button
                           onClick={() => handleDeletePayment(p.paymentId)}
-                          className="p-2 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          className="p-2 text-pink-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Payment"
                         >
                           <Trash2 size={16} />

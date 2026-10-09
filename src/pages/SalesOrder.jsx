@@ -829,58 +829,60 @@ export default function SalesOrder({ onNavigateToSale }) {
           </div>
         ) : (
           filteredOrders.map(o => (
-            <article key={o.orderId} className="p-[1px] rounded-2xl bg-gradient-to-br from-blue-500/30 via-slate-200 to-indigo-500/30 shadow-md shadow-slate-200/60 hover:shadow-xl hover:shadow-blue-500/10 transition-all duration-300 overflow-hidden">
-              <div className="bg-[#fff7f9] rounded-2xl overflow-hidden flex flex-col h-full">
-                {/* Effective Colored Card Header */}
-                <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
-                  <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
-                  <div className="relative z-10">
-                    <p className="font-black text-sm text-white leading-tight mb-1">{o.customerName}</p>
-                    <div className="flex items-center gap-2">
-                      <span className="font-mono text-[9px] font-bold text-blue-200 bg-white/10 border border-white/10 px-2 py-0.5 rounded-md backdrop-blur-md">{o.orderNo}</span>
-                      <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(o.orderDate)}</span>
-                    </div>
+            <article key={o.orderId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+              {/* Header */}
+              <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
+                <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
+                <div className="flex flex-col justify-center relative z-10">
+                  <p className="font-bold text-sm text-white leading-tight mb-1">{o.customerName}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="font-mono text-[10px] font-bold text-slate-300 bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">{o.orderNo}</span>
+                    <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(o.orderDate)}</span>
                   </div>
-                  <span className={`relative z-10 shrink-0 inline-flex items-center justify-center rounded-full px-2.5 py-1 text-[9px] font-black uppercase tracking-wider backdrop-blur-md border ${
+                </div>
+                <div className="shrink-0 flex items-center gap-2 relative z-10">
+                  <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-wider ${
                     o.status === 'CONVERTED'
-                      ? "bg-emerald-500/20 text-emerald-300 border-emerald-500/30"
+                      ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
                       : o.status === 'CONFIRMED'
-                        ? "bg-blue-500/20 text-blue-300 border-blue-500/30"
+                        ? "bg-blue-500/20 text-blue-400 border border-blue-500/30"
                         : o.status === 'CANCELLED'
-                          ? "bg-rose-500/20 text-rose-300 border-rose-500/30"
-                          : "bg-amber-500/20 text-amber-300 border-amber-500/30"
+                          ? "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                          : "bg-amber-500/20 text-amber-400 border border-amber-500/30"
                   }`}>
                     {o.status === 'CONVERTED' ? 'Converted' : o.status === 'CONFIRMED' ? 'Confirmed' : o.status === 'CANCELLED' ? 'Cancelled' : 'Draft'}
                   </span>
                 </div>
+              </div>
 
-                {/* Financial & Delivery Summary */}
-                <div className="grid grid-cols-3 gap-2 px-4 py-3.5 bg-white">
-                  <div>
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Total Value</p>
-                    <p className="mt-0.5 text-sm font-black text-slate-900 font-mono">{fmt(o.totalAmount)}</p>
-                  </div>
-                  <div className="border-l border-slate-100 pl-3">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Priority</p>
-                    <p className={`mt-0.5 text-xs font-bold uppercase ${
-                      o.priority === 'URGENT' ? 'text-rose-600' : o.priority === 'HIGH' ? 'text-amber-600' : 'text-slate-700'
-                    }`}>{o.priority || 'Normal'}</p>
-                  </div>
-                  <div className="border-l border-slate-100 pl-3">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Delivery</p>
-                    <p className="mt-0.5 text-xs font-bold text-slate-800">{formatDateDDMMYYYY(o.expectedDate)}</p>
-                  </div>
+              {/* Financial & Delivery Summary */}
+              <div className="grid grid-cols-3 px-4 py-3">
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total Value</p>
+                  <p className="text-sm font-black text-slate-900">{fmt(o.totalAmount)}</p>
                 </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Priority</p>
+                  <p className={`text-xs font-black uppercase tracking-wider ${
+                    o.priority === 'URGENT' ? 'text-rose-600' : o.priority === 'HIGH' ? 'text-amber-600' : 'text-slate-700'
+                  }`}>{o.priority || 'NORMAL'}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Delivery</p>
+                  <p className="text-xs font-black text-slate-800">{formatDateDDMMYYYY(o.expectedDate)}</p>
+                </div>
+              </div>
 
-                {/* Items Summary (Sales Ledger Style) */}
-                <div className="mx-4 mb-3.5 rounded-xl bg-slate-50 border border-slate-100 p-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <p className="text-[9px] font-bold uppercase tracking-widest text-slate-400">Order Items</p>
-                    <p className="text-[9px] font-bold text-slate-500">
+              {/* Items Summary */}
+              <div className="px-4 pb-3">
+                <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/50">
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Items</p>
+                    <p className="text-[10px] font-bold text-slate-500">
                       {o.details?.reduce((sum, d) => sum + (Number(d.orderedQuantity) || Number(d.quantity) || 0), 0) || o.totalItems || 0} Total Qty
                     </p>
                   </div>
-                  <div className="space-y-1.5">
+                  <div className="space-y-2.5">
                     {o.details && o.details.length > 0 ? (
                       o.details.map((d, idx) => {
                         const sizeStr = getProductSizeStr(d.productId);
@@ -890,23 +892,24 @@ export default function SalesOrder({ onNavigateToSale }) {
                           ? `${sizeStr.replace(/[^0-9]/g, '')}" Areca Plate` 
                           : (d.productName || 'Areca Plate');
                         return (
-                          <div key={idx} className="flex items-center justify-between text-[11px]">
+                          <div key={idx} className="flex items-center justify-between text-xs">
                             <span className="font-bold text-slate-700">{plateName}</span>
                             <div className="flex items-center gap-3">
                               <span className="text-slate-400 font-medium">{qty} pcs</span>
-                              <span className="font-bold text-slate-800">{fmt(qty * price)}</span>
+                              <span className="font-black text-slate-900">{fmt(qty * price)}</span>
                             </div>
                           </div>
                         );
                       })
                     ) : (
-                      <div className="text-[11px] text-slate-400 italic">No item details recorded</div>
+                      <div className="text-[11px] text-slate-400 italic font-medium">No item details recorded</div>
                     )}
                   </div>
                 </div>
+              </div>
 
-                {/* Actions (Sales Ledger Style 4-Column Grid) */}
-                <div className="grid grid-cols-4 border-t border-slate-100 bg-slate-50/70 divide-x divide-slate-100">
+              {/* Actions */}
+              <div className="mt-auto grid grid-cols-4 border-t border-slate-100">
                   <button 
                     onClick={() => setViewOrder(o)}
                     className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-brand-accent hover:bg-blue-50/50 transition-colors"
@@ -952,7 +955,6 @@ export default function SalesOrder({ onNavigateToSale }) {
                     </div>
                   )}
                 </div>
-              </div>
             </article>
           ))
         )}
