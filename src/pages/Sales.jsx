@@ -267,7 +267,11 @@ export default function Sales() {
   const handleAddPayment = async (e) => {
     e.preventDefault();
     if (!newPayment.amount || newPayment.amount <= 0) {
-      Swal.fire('Error', 'Amount must be greater than zero', 'error');
+      Swal.fire('Invalid Amount', 'Amount must be greater than zero.', 'warning');
+      return;
+    }
+    if (parseFloat(newPayment.amount) > paymentSale.balanceAmount) {
+      Swal.fire('Excess Amount', `You cannot collect more than the remaining balance of ₹${paymentSale.balanceAmount}`, 'warning');
       return;
     }
     if (!newPayment.accountId) {

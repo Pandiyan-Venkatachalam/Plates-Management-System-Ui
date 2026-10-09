@@ -1,13 +1,14 @@
 import React, { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
-import { UserPlus, Shield, Search, ChevronRight, Plus, User } from 'lucide-react';
+import { UserPlus, Shield, Search, ChevronRight, Plus, User, Edit2, Trash2 } from 'lucide-react';
 import Swal from 'sweetalert2';
 import { handlePrint } from '../utils/printHelper';
 import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
 import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function UsersAndRoles() {
-  const { apiRequest } = useAuth();
+  const { apiRequest, user } = useAuth();
+  const isAdmin = user?.roles?.includes('ADMIN') || user?.username === 'Pandiyan';
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
 
@@ -19,13 +20,16 @@ export default function UsersAndRoles() {
   const [lastBackup, setLastBackup] = useState(localStorage.getItem('vpms_last_backup') || 'Never');
 
   // Form State
+  const [isEditing, setIsEditing] = useState(false);
   const [form, setForm] = useState({
+    userId: null,
     username: '',
     fullName: '',
     email: '',
     phone: '',
     password: '',
-    role: 'USER'
+    role: 'USER',
+    isActive: true
   });
 
   const loadData = () => {
@@ -40,23 +44,75 @@ export default function UsersAndRoles() {
   const handleSubmit = async (e) => {
     e.preventDefault();
     try {
-      await apiRequest('/auth/register', {
-        method: 'POST',
-        body: JSON.stringify(form)
-      });
-      Swal.fire('Success', 'User registered successfully!', 'success');
-      setForm({
-        username: '',
-        fullName: '',
-        email: '',
-        phone: '',
-        password: '',
-        role: 'USER'
-      });
-      setShowCreateForm(false);
+      if (isEditing) {
+        await apiRequest(`/auth/users/${form.userId}`, {
+          method: 'PUT',
+          body: JSON.stringify(form)
+        });
+        Swal.fire('Success', 'User updated successfully!', 'success');
+      } else {
+        await apiRequest('/auth/register', {
+          method: 'POST',
+          body: JSON.stringify(form)
+        });
+        Swal.fire('Success', 'User registered successfully!', 'success');
+      }
+      resetForm();
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const resetForm = () => {
+    setForm({
+      userId: null,
+      username: '',
+      fullName: '',
+      email: '',
+      phone: '',
+      password: '',
+      role: 'USER',
+      isActive: true
+    });
+    setIsEditing(false);
+    setShowCreateForm(false);
+  };
+
+  const handleEdit = (u) => {
+    setForm({
+      userId: u.userId,
+      username: u.username || '',
+      fullName: u.fullName || '',
+      email: u.email || '',
+      phone: u.phone || '',
+      password: '', // Leave empty to not change
+      role: u.roles[0] || 'USER',
+      isActive: u.isActive
+    });
+    setIsEditing(true);
+    setShowCreateForm(true);
+  };
+
+  const handleDelete = async (u) => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: `Do you really want to delete user ${u.fullName}?`,
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Yes, delete it!'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await apiRequest(`/auth/users/${u.userId}`, { method: 'DELETE' });
+        Swal.fire('Deleted!', 'User has been deleted.', 'success');
+        loadData();
+      } catch (err) {
+        Swal.fire('Error', err.message, 'error');
+      }
     }
   };
 
@@ -152,23 +208,18 @@ export default function UsersAndRoles() {
               <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><path d="M6 9V4a1 1 0 0 1 1-1h10a1 1 0 0 1 1 1v5"/><rect x="6" y="14" width="12" height="8" rx="1"/></svg>
               <span className="hidden sm:inline">Print Report</span>
             </button>
-            <button 
-              onClick={() => {
-                setForm({
-                  username: '',
-                  fullName: '',
-                  email: '',
-                  phone: '',
-                  password: '',
-                  role: 'USER'
-                });
-                setShowCreateForm(true);
-              }}
-              className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
-            >
-              <Plus size={14} strokeWidth={3} />
-              Add Staff Member
-            </button>
+            {isAdmin && (
+              <button 
+                onClick={() => {
+                  resetForm();
+                  setShowCreateForm(true);
+                }}
+                className="flex shrink-0 items-center justify-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all shadow-lg bg-gradient-to-r from-brand-accent to-blue-600 text-white shadow-brand-accent/25 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+              >
+                <Plus size={14} strokeWidth={3} />
+                Add Staff Member
+              </button>
+            )}
           </div>
         </div>
       </section>
@@ -202,6 +253,7 @@ export default function UsersAndRoles() {
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-200 uppercase tracking-widest whitespace-nowrap">Username</th>
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-200 uppercase tracking-widest whitespace-nowrap">Assigned Role</th>
                 <th className="px-5 py-3 text-[10px] font-bold text-slate-200 uppercase tracking-widest whitespace-nowrap text-right">Status</th>
+                {isAdmin && <th className="px-5 py-3 text-[10px] font-bold text-slate-200 uppercase tracking-widest whitespace-nowrap text-right">Actions</th>}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -230,6 +282,18 @@ export default function UsersAndRoles() {
                         {u.isActive ? 'Active' : 'Inactive'}
                       </span>
                     </td>
+                    {isAdmin && (
+                      <td className="px-5 py-3 text-right">
+                        <div className="flex items-center justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button onClick={() => handleEdit(u)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors">
+                            <Edit2 size={14} strokeWidth={2.5} />
+                          </button>
+                          <button onClick={() => handleDelete(u)} className="p-1.5 text-rose-600 hover:bg-rose-50 rounded-lg transition-colors">
+                            <Trash2 size={14} strokeWidth={2.5} />
+                          </button>
+                        </div>
+                      </td>
+                    )}
                   </tr>
                 ))
               )}
@@ -290,6 +354,16 @@ export default function UsersAndRoles() {
                       {u.roles.join(', ') || 'USER'}
                     </span>
                   </div>
+                  {isAdmin && (
+                    <div className="pt-3 mt-3 border-t border-slate-100 flex gap-2 justify-end">
+                      <button onClick={() => handleEdit(u)} className="flex items-center gap-1 px-3 py-1.5 bg-blue-50 text-blue-600 rounded-lg font-bold">
+                        <Edit2 size={12} strokeWidth={2.5} /> Edit
+                      </button>
+                      <button onClick={() => handleDelete(u)} className="flex items-center gap-1 px-3 py-1.5 bg-rose-50 text-rose-600 rounded-lg font-bold">
+                        <Trash2 size={12} strokeWidth={2.5} /> Delete
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </article>
@@ -359,7 +433,7 @@ export default function UsersAndRoles() {
             
             <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
               <h3 className="text-lg font-black text-slate-900 tracking-tight">
-                Add Staff User
+                {isEditing ? 'Edit Staff User' : 'Add Staff User'}
               </h3>
               <button 
                 onClick={() => setShowCreateForm(false)}
@@ -395,14 +469,16 @@ export default function UsersAndRoles() {
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Password</label>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">
+                  Password {isEditing && <span className="text-slate-400 normal-case">(Leave empty to keep current password)</span>}
+                </label>
                 <input
                   type="password"
                   value={form.password}
                   onChange={(e) => setForm({ ...form, password: e.target.value })}
                   className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
                   placeholder="••••••••"
-                  required
+                  required={!isEditing}
                 />
               </div>
 
@@ -440,6 +516,20 @@ export default function UsersAndRoles() {
                 </select>
               </div>
 
+              {isEditing && (
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Status</label>
+                  <select
+                    value={form.isActive}
+                    onChange={(e) => setForm({ ...form, isActive: e.target.value === 'true' })}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                  >
+                    <option value="true">Active (Can Login)</option>
+                    <option value="false">Inactive (Account Disabled)</option>
+                  </select>
+                </div>
+              )}
+
               <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">
                 <button
                   type="button"
@@ -452,8 +542,8 @@ export default function UsersAndRoles() {
                   type="submit" 
                   className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
                 >
-                  <Plus size={14} strokeWidth={3} />
-                  Create Staff
+                  {isEditing ? <Edit2 size={14} strokeWidth={3} /> : <Plus size={14} strokeWidth={3} />}
+                  {isEditing ? 'Save Changes' : 'Create Staff'}
                 </button>
               </div>
             </form>
