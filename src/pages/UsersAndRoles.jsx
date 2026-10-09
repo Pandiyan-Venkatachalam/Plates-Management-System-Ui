@@ -8,7 +8,7 @@ import { formatDateDDMMYYYY } from '../utils/dateHelper';
 
 export default function UsersAndRoles() {
   const { apiRequest, user } = useAuth();
-  const isAdmin = user?.roles?.includes('ADMIN') || user?.username === 'Pandiyan';
+  const isAdmin = user?.roles?.includes('ADMIN') || user?.roles?.includes('PARTNER') || user?.username === 'Pandiyan' || user?.username === 'Ranjith';
   const [users, setUsers] = useState([]);
   const [roles, setRoles] = useState([]);
 
