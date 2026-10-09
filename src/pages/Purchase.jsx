@@ -1281,37 +1281,39 @@ export default function Purchase() {
           PAYMENT HISTORY MODAL
       ========================================================= */}
       {showPaymentModal && paymentPurchase && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
-          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200 w-full max-w-2xl max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
-            <div className="p-5 border-b border-pink-200/60 flex items-center justify-between bg-pink-50/30">
-              <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-pink-100 text-pink-700 flex items-center justify-center font-black">
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-5 py-4 text-white flex items-center justify-between overflow-hidden shrink-0">
+              <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex items-center gap-3 relative z-10">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-blue-300 backdrop-blur-md border border-white/10 shadow-inner">
                   <WalletCards size={20} />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-slate-900">Payment History</h3>
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                  <h3 className="text-base font-black text-white leading-tight mb-0.5">Payment History</h3>
+                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
                     {paymentPurchase.supplierName} • PUR-{paymentPurchase.purchaseId}
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-slate-800 p-2 rounded-full hover:bg-slate-200 transition-colors">
+              <button onClick={() => setShowPaymentModal(false)} className="relative z-10 text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors">
                 ✕
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto flex-1">
+            <div className="p-5 overflow-y-auto flex-1 bg-slate-50/50">
               {/* Payment Stats */}
-              <div className="grid grid-cols-3 divide-x divide-pink-200/60 border-y border-pink-200/60 py-4 mb-6">
+              <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/60 shadow-sm p-4 mb-6">
                 <div className="text-center">
-                  <p className="text-[10px] uppercase font-bold text-pink-500 mb-1">Total Bill</p>
+                  <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Total Bill</p>
                   <p className="font-black text-slate-900">{money(paymentPurchase.totalAmount)}</p>
                 </div>
-                <div className="text-center">
+                <div className="text-center border-l border-slate-100">
                   <p className="text-[10px] uppercase font-bold text-emerald-600 mb-1">Paid Amount</p>
                   <p className="font-black text-emerald-700">{money(paymentPurchase.paidAmount)}</p>
                 </div>
-                <div className="text-center">
+                <div className="text-center border-l border-slate-100">
                   <p className={`text-[10px] uppercase font-bold mb-1 ${paymentPurchase.balanceAmount > 0 ? 'text-rose-500' : 'text-slate-500'}`}>Balance</p>
                   <p className={`font-black ${paymentPurchase.balanceAmount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{money(paymentPurchase.balanceAmount)}</p>
                 </div>
@@ -1319,26 +1321,26 @@ export default function Purchase() {
 
               {/* Add Payment Form */}
               {paymentPurchase.balanceAmount > 0 && (
-                <div className="mb-6">
-                  <h4 className="text-xs font-black text-slate-900 mb-3 flex items-center gap-2">
-                    <Plus size={14} className="text-pink-600" /> Record New Payment
+                <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm">
+                  <h4 className="text-xs font-black text-slate-900 mb-4 flex items-center gap-2">
+                    <Plus size={14} className="text-blue-600" /> Record New Payment
                   </h4>
                   <form onSubmit={handleAddPayment} className="flex flex-col gap-4">
-                    <div className="grid grid-cols-2 gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div>
-                        <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Amount (₹)</label>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Amount (₹)</label>
                         <input
                           type="number" step="0.01" required
                           value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
-                          className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-pink-300"
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
                           placeholder={`Max: ${paymentPurchase.balanceAmount}`}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Payment Account</label>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Payment Account</label>
                         <select
                           required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
-                          className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold"
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold text-slate-700"
                         >
                           <option value="">Select Account</option>
                           {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
@@ -1346,16 +1348,16 @@ export default function Purchase() {
                       </div>
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-pink-600 uppercase mb-1.5">Notes (Optional)</label>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Notes (Optional)</label>
                       <input
                         type="text"
                         value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
-                        className="w-full bg-white/60 border border-pink-200 focus:border-pink-500 focus:ring-2 focus:ring-pink-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-pink-300"
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
                         placeholder="e.g. Paid by GPay"
                       />
                     </div>
-                    <div className="flex justify-end mt-1">
-                      <button type="submit" className="bg-pink-600 text-white px-5 py-2 rounded-xl text-xs font-bold hover:bg-pink-700 transition-colors flex items-center gap-2 shadow-md shadow-pink-600/20">
+                    <div className="flex justify-end mt-2">
+                      <button type="submit" className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20">
                         <CheckCircle size={14} /> Save Payment
                       </button>
                     </div>
@@ -1364,28 +1366,28 @@ export default function Purchase() {
               )}
 
               {/* Payments List */}
-              <div>
-                <h4 className="text-xs font-black text-slate-900 mb-2 uppercase tracking-wider">Payment Records</h4>
+              <div className="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm">
+                <h4 className="text-xs font-black text-slate-900 mb-3 uppercase tracking-wider">Payment Records</h4>
                 {payments.length === 0 ? (
-                  <div className="text-center py-4">
-                    <p className="text-xs font-bold text-pink-400">No payments recorded yet.</p>
+                  <div className="text-center py-4 bg-slate-50 rounded-lg border border-slate-100 border-dashed">
+                    <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
                   </div>
                 ) : (
-                  <div className="flex flex-col">
+                  <div className="flex flex-col gap-2">
                     {payments.map(p => (
-                      <div key={p.paymentId} className="flex items-center justify-between py-3 border-b border-pink-200/50 group last:border-0">
+                      <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors group">
                         <div className="flex flex-col">
                           <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
-                          <div className="flex items-center gap-2 text-[10px] font-bold text-slate-500 mt-0.5">
+                          <div className="flex items-center flex-wrap gap-2 text-[10px] font-bold text-slate-500 mt-1">
                             <span>{formatDateDDMMYYYY(p.createdAt)}</span>
-                            <span className="text-pink-300">•</span>
-                            <span className="text-pink-700 bg-pink-100 px-1.5 rounded">{p.accountName}</span>
-                            {p.notes && <><span className="text-pink-300">•</span><span className="text-slate-500">{p.notes}</span></>}
+                            <span className="text-slate-300">•</span>
+                            <span className="text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded uppercase">{p.accountName}</span>
+                            {p.notes && <><span className="text-slate-300">•</span><span className="text-slate-500">{p.notes}</span></>}
                           </div>
                         </div>
                         <button
                           onClick={() => handleDeletePayment(p.paymentId)}
-                          className="p-2 text-pink-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
                           title="Delete Payment"
                         >
                           <Trash2 size={16} />
