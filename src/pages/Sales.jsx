@@ -311,59 +311,141 @@ export default function Sales() {
   };
 
   const handleCollectPayment = async (s) => {
-    const defaultAcc = s.paymentMethodAccountName || s.accountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash');
-    const optionsHtml = accounts.map(a => `<option value="${a.accountName}" ${a.accountName === defaultAcc ? 'selected' : ''}>${a.accountName}</option>`).join('');
+    if (!s || s.balanceAmount <= 0) {
+      Swal.fire('Already Settled', `Invoice INV-${s?.saleId} is already fully paid.`, 'info');
+      return;
+    }
 
-    const { value: chosenAccount, isConfirmed } = await Swal.fire({
-      title: 'Collect Full Payment',
+    const defaultAccObj = accounts.find(a => 
+      a.accountName === (s.paymentMethodAccountName || s.accountName)
+    ) || (accounts.length > 0 ? accounts[0] : null);
+    const defaultAccId = defaultAccObj ? defaultAccObj.accountId : (accounts[0]?.accountId || '');
+
+    const optionsHtml = accounts.map(a => 
+      `<option value="${a.accountId}" ${a.accountId === defaultAccId ? 'selected' : ''}>${a.accountName}</option>`
+    ).join('');
+
+    const { value: formValues, isConfirmed } = await Swal.fire({
+      title: `<span class="text-base font-black text-slate-800">Collect Payment — INV-${s.saleId}</span>`,
       html: `
-        <p class="text-xs text-slate-500 mb-3">Mark invoice <b>INV-${s.saleId}</b> as fully paid (${money(s.totalAmount)})?</p>
-        <div class="text-left">
-          <label class="block text-[10px] font-bold text-slate-500 uppercase mb-1">Deposit Into Account</label>
-          <select id="swal-collect-acc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
-            ${optionsHtml}
-          </select>
+        <div class="text-left space-y-3 pt-1 text-slate-700">
+          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
+            <div class="flex justify-between">
+              <span class="text-slate-500 font-bold">Customer:</span>
+              <span class="text-slate-900 font-black">${s.customerName || 'Customer'}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500 font-bold">Total Bill:</span>
+              <span class="text-slate-900 font-black">${money(s.totalAmount)}</span>
+            </div>
+            <div class="flex justify-between">
+              <span class="text-slate-500 font-bold">Already Paid:</span>
+              <span class="text-emerald-600 font-black">${money(s.paidAmount)}</span>
+            </div>
+            <div class="flex justify-between pt-1 border-t border-slate-200">
+              <span class="text-rose-600 font-bold">Remaining Balance:</span>
+              <span class="text-rose-600 font-black text-sm">${money(s.balanceAmount)}</span>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">
+              Amount to Collect (₹)
+            </label>
+            <input 
+              id="swal-collect-amount" 
+              type="number" 
+              step="any"
+              min="1"
+              max="${s.balanceAmount}"
+              value="${s.balanceAmount}" 
+              class="w-full bg-white border-2 border-emerald-500 rounded-xl p-2.5 text-base font-black text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
+              placeholder="Enter amount"
+            />
+            <p class="text-[10px] text-slate-500 mt-1">
+              Default is full balance <b>₹${s.balanceAmount}</b>. You can change this for partial payment.
+            </p>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Deposit Into Account</label>
+            <select id="swal-collect-acc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
+              ${optionsHtml}
+            </select>
+          </div>
+
+          <div>
+            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Payment Method</label>
+            <select id="swal-collect-method" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
+              <option value="CASH" selected>CASH</option>
+              <option value="GPAY">GPAY</option>
+              <option value="PHONEPE">PHONEPE</option>
+              <option value="BANK TRANSFER">BANK TRANSFER</option>
+              <option value="CHEQUE">CHEQUE</option>
+            </select>
+          </div>
         </div>
       `,
+      focusConfirm: false,
       preConfirm: () => {
-        return document.getElementById('swal-collect-acc')?.value || defaultAcc;
+        const amountStr = document.getElementById('swal-collect-amount')?.value;
+        const amountVal = parseFloat(amountStr);
+        const accIdStr = document.getElementById('swal-collect-acc')?.value;
+        const method = document.getElementById('swal-collect-method')?.value || 'CASH';
+
+        if (!amountVal || isNaN(amountVal) || amountVal <= 0) {
+          Swal.showValidationMessage('Please enter a valid amount greater than 0');
+          return false;
+        }
+        if (amountVal > s.balanceAmount) {
+          Swal.showValidationMessage(`Cannot collect more than the remaining balance (₹${s.balanceAmount})`);
+          return false;
+        }
+        if (!accIdStr) {
+          Swal.showValidationMessage('Please select a deposit account');
+          return false;
+        }
+        return {
+          amount: amountVal,
+          accountId: parseInt(accIdStr),
+          paymentMethod: method
+        };
       },
       showCancelButton: true,
       confirmButtonColor: '#10b981',
-      cancelButtonColor: '#ef4444',
-      confirmButtonText: 'Yes, Collect Payment!'
+      cancelButtonColor: '#94a3b8',
+      confirmButtonText: 'Collect Payment'
     });
 
-    if (!isConfirmed) return;
+    if (!isConfirmed || !formValues) return;
+
     try {
-      await apiRequest(`/sales/${s.saleId}`, {
-        method: 'PUT',
+      const chosenAcc = accounts.find(a => a.accountId === formValues.accountId);
+      const chosenAccName = chosenAcc ? chosenAcc.accountName : 'Selected Account';
+
+      await apiRequest(`/sales/${s.saleId}/payments`, {
+        method: 'POST',
         body: JSON.stringify({
-          customerId: s.customerId,
-          saleDate: s.saleDate,
-          details: s.details ? s.details.map(d => ({
-            productId: d.productId,
-            quantity: d.quantity,
-            unitPrice: d.unitPrice,
-            batchId: d.batchId
-          })) : [],
-          totalAmount: s.totalAmount,
-          paidAmount: s.totalAmount,
-          paymentStatus: 'PAID',
-          status: s.status,
-          paymentMethodAccountName: chosenAccount
+          amount: formValues.amount,
+          accountId: formValues.accountId,
+          paymentMethod: formValues.paymentMethod,
+          notes: formValues.amount >= s.balanceAmount ? 'Full balance settlement' : 'Partial payment'
         })
       });
       markItemAsUpdated('sales', s.saleId);
 
       // Automated WhatsApp notification for payment received
+      const newPaid = (s.paidAmount || 0) + formValues.amount;
+      const newBalance = Math.max(0, (s.totalAmount || 0) - newPaid);
+      const newStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL';
+
       const waMsg = createSalesWhatsAppMessage({
         saleId: s.saleId,
         customerName: s.customerName,
         totalAmount: s.totalAmount,
-        paidAmount: s.totalAmount,
-        balanceAmount: 0,
-        paymentStatus: 'PAID',
+        paidAmount: newPaid,
+        balanceAmount: newBalance,
+        paymentStatus: newStatus,
         handledBy: 'Admin'
       });
       sendWhatsAppNotificationToPartner(apiRequest, {
@@ -375,7 +457,16 @@ export default function Sales() {
         performedBy: 'Admin'
       });
 
-      Swal.fire('Paid!', `Payment recorded into ${chosenAccount} & WhatsApp notification dispatched!`, 'success');
+      const isFull = formValues.amount >= s.balanceAmount;
+      Swal.fire({
+        title: isFull ? 'Invoice Settled!' : 'Payment Recorded!',
+        text: isFull 
+          ? `Full payment of ${money(formValues.amount)} recorded into ${chosenAccName}. Invoice is now fully paid!` 
+          : `Partial payment of ${money(formValues.amount)} recorded into ${chosenAccName}. Remaining balance: ${money(newBalance)}`,
+        icon: 'success',
+        timer: 3000,
+        showConfirmButton: true
+      });
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
@@ -761,6 +852,15 @@ export default function Sales() {
                       >
                         <CircleDollarSign size={12} />
                       </button>
+                      {s.balanceAmount > 0 && (
+                        <button
+                          onClick={() => handleCollectPayment(s)}
+                          className="p-1.5 rounded-lg hover:bg-emerald-100 bg-emerald-50 border border-emerald-200 text-emerald-600 transition-all hover:shadow-sm"
+                          title="Collect Payment"
+                        >
+                          <WalletCards size={12} />
+                        </button>
+                      )}
                       <button
                         onClick={() => handleDelete(s.saleId)}
                         className="p-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-100 text-slate-400 hover:text-rose-500 transition-all hover:shadow-sm"
