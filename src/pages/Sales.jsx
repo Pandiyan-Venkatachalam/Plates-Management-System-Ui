@@ -1287,8 +1287,8 @@ export default function Sales() {
           PAYMENT HISTORY MODAL (Matching Emerald Collect Theme)
       ========================================================= */}
       {showPaymentModal && paymentSale && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 animate-backdrop-in">
-          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-sm sm:max-w-lg max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-[95%] sm:w-full max-w-md sm:max-w-lg max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Header */}
             <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
@@ -1459,8 +1459,8 @@ export default function Sales() {
           QUICK COLLECT MODAL (100% Mobile Responsive)
       ========================================================= */}
       {showCollectModal && collectSale && (
-        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 animate-backdrop-in">
-          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-sm sm:max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-[95%] sm:w-full max-w-md sm:max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
             {/* Header */}
             <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
               <div className="flex items-center gap-2.5">
