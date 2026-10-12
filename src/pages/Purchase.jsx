@@ -122,10 +122,28 @@ export default function Purchase() {
   };
 
   const handleDeletePayment = async (paymentId) => {
-    if (!window.confirm("Are you sure you want to delete this payment?")) return;
+    const result = await Swal.fire({
+      title: 'Delete Payment?',
+      text: 'Are you sure you want to delete this payment record?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel'
+    });
+    if (!result.isConfirmed) return;
+
     try {
       await apiRequest(`/purchase/${paymentPurchase.purchaseId}/payments/${paymentId}`, {
         method: 'DELETE'
+      });
+      Swal.fire({
+        title: 'Deleted!',
+        text: 'Payment record deleted.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
       });
       fetchPayments(paymentPurchase.purchaseId);
       loadData();
@@ -1390,8 +1408,12 @@ export default function Purchase() {
                           </div>
                         </div>
                         <button
-                          onClick={() => handleDeletePayment(p.paymentId)}
-                          className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePayment(p.paymentId);
+                          }}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
                           title="Delete Payment"
                         >
                           <Trash2 size={16} />
