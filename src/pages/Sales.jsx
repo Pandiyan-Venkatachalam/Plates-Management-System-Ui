@@ -50,6 +50,12 @@ export default function Sales() {
   const [payments, setPayments] = useState([]);
   const [newPayment, setNewPayment] = useState({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
 
+  // Quick Collect Modal States
+  const [showCollectModal, setShowCollectModal] = useState(false);
+  const [collectSale, setCollectSale] = useState(null);
+  const [collectForm, setCollectForm] = useState({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
+  const [isCollecting, setIsCollecting] = useState(false);
+
   const loadData = () => {
     apiRequest('/sales').then(res => setSales(sortLatestFirst(res.data, ['saleId', 'id'], 'sales'))).catch(console.error);
     apiRequest('/customer').then(res => setCustomers(sortLatestFirst(res.data, ['customerId', 'id'], 'customer'))).catch(console.error);
@@ -310,139 +316,68 @@ export default function Sales() {
     }
   };
 
-  const handleCollectPayment = async (s) => {
+  const handleCollectPayment = (s) => {
     if (!s || s.balanceAmount <= 0) {
       Swal.fire('Already Settled', `Invoice INV-${s?.saleId} is already fully paid.`, 'info');
       return;
     }
 
-    const defaultAccObj = accounts.find(a => 
+    const defaultAcc = accounts.find(a => 
       a.accountName === (s.paymentMethodAccountName || s.accountName)
     ) || (accounts.length > 0 ? accounts[0] : null);
-    const defaultAccId = defaultAccObj ? defaultAccObj.accountId : (accounts[0]?.accountId || '');
 
-    const optionsHtml = accounts.map(a => 
-      `<option value="${a.accountId}" ${a.accountId === defaultAccId ? 'selected' : ''}>${a.accountName}</option>`
-    ).join('');
-
-    const { value: formValues, isConfirmed } = await Swal.fire({
-      title: `<span class="text-base font-black text-slate-800">Collect Payment — INV-${s.saleId}</span>`,
-      html: `
-        <div class="text-left space-y-3 pt-1 text-slate-700">
-          <div class="bg-slate-50 border border-slate-200 rounded-xl p-3 text-xs space-y-1.5">
-            <div class="flex justify-between">
-              <span class="text-slate-500 font-bold">Customer:</span>
-              <span class="text-slate-900 font-black">${s.customerName || 'Customer'}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-500 font-bold">Total Bill:</span>
-              <span class="text-slate-900 font-black">${money(s.totalAmount)}</span>
-            </div>
-            <div class="flex justify-between">
-              <span class="text-slate-500 font-bold">Already Paid:</span>
-              <span class="text-emerald-600 font-black">${money(s.paidAmount)}</span>
-            </div>
-            <div class="flex justify-between pt-1 border-t border-slate-200">
-              <span class="text-rose-600 font-bold">Remaining Balance:</span>
-              <span class="text-rose-600 font-black text-sm">${money(s.balanceAmount)}</span>
-            </div>
-          </div>
-
-          <div>
-            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">
-              Amount to Collect (₹)
-            </label>
-            <input 
-              id="swal-collect-amount" 
-              type="number" 
-              step="any"
-              min="1"
-              max="${s.balanceAmount}"
-              value="${s.balanceAmount}" 
-              class="w-full bg-white border-2 border-emerald-500 rounded-xl p-2.5 text-base font-black text-emerald-700 focus:outline-none focus:ring-2 focus:ring-emerald-400"
-              placeholder="Enter amount"
-            />
-            <p class="text-[10px] text-slate-500 mt-1">
-              Default is full balance <b>₹${s.balanceAmount}</b>. You can change this for partial payment.
-            </p>
-          </div>
-
-          <div>
-            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Deposit Into Account</label>
-            <select id="swal-collect-acc" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
-              ${optionsHtml}
-            </select>
-          </div>
-
-          <div>
-            <label class="block text-[10px] font-bold text-slate-600 uppercase mb-1">Payment Method</label>
-            <select id="swal-collect-method" class="w-full bg-slate-50 border border-slate-200 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none">
-              <option value="CASH" selected>CASH</option>
-              <option value="GPAY">GPAY</option>
-              <option value="PHONEPE">PHONEPE</option>
-              <option value="BANK TRANSFER">BANK TRANSFER</option>
-              <option value="CHEQUE">CHEQUE</option>
-            </select>
-          </div>
-        </div>
-      `,
-      focusConfirm: false,
-      preConfirm: () => {
-        const amountStr = document.getElementById('swal-collect-amount')?.value;
-        const amountVal = parseFloat(amountStr);
-        const accIdStr = document.getElementById('swal-collect-acc')?.value;
-        const method = document.getElementById('swal-collect-method')?.value || 'CASH';
-
-        if (!amountVal || isNaN(amountVal) || amountVal <= 0) {
-          Swal.showValidationMessage('Please enter a valid amount greater than 0');
-          return false;
-        }
-        if (amountVal > s.balanceAmount) {
-          Swal.showValidationMessage(`Cannot collect more than the remaining balance (₹${s.balanceAmount})`);
-          return false;
-        }
-        if (!accIdStr) {
-          Swal.showValidationMessage('Please select a deposit account');
-          return false;
-        }
-        return {
-          amount: amountVal,
-          accountId: parseInt(accIdStr),
-          paymentMethod: method
-        };
-      },
-      showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#94a3b8',
-      confirmButtonText: 'Collect Payment'
+    setCollectSale(s);
+    setCollectForm({
+      amount: s.balanceAmount,
+      accountId: defaultAcc ? defaultAcc.accountId : (accounts[0]?.accountId || ''),
+      paymentMethod: 'CASH',
+      notes: ''
     });
+    setShowCollectModal(true);
+  };
 
-    if (!isConfirmed || !formValues) return;
+  const handleConfirmCollect = async (e) => {
+    e.preventDefault();
+    if (!collectSale) return;
+    const amountVal = parseFloat(collectForm.amount);
+    if (!amountVal || isNaN(amountVal) || amountVal <= 0) {
+      Swal.fire('Invalid Amount', 'Please enter a valid amount greater than 0.', 'warning');
+      return;
+    }
+    if (amountVal > collectSale.balanceAmount) {
+      Swal.fire('Excess Amount', `Cannot collect more than the remaining balance of ${money(collectSale.balanceAmount)}`, 'warning');
+      return;
+    }
+    if (!collectForm.accountId) {
+      Swal.fire('Select Account', 'Please select a deposit account.', 'warning');
+      return;
+    }
 
+    setIsCollecting(true);
     try {
-      const chosenAcc = accounts.find(a => a.accountId === formValues.accountId);
+      const chosenAcc = accounts.find(a => a.accountId === parseInt(collectForm.accountId));
       const chosenAccName = chosenAcc ? chosenAcc.accountName : 'Selected Account';
 
-      await apiRequest(`/sales/${s.saleId}/payments`, {
+      await apiRequest(`/sales/${collectSale.saleId}/payments`, {
         method: 'POST',
         body: JSON.stringify({
-          amount: formValues.amount,
-          accountId: formValues.accountId,
-          paymentMethod: formValues.paymentMethod,
-          notes: formValues.amount >= s.balanceAmount ? 'Full balance settlement' : 'Partial payment'
+          amount: amountVal,
+          accountId: parseInt(collectForm.accountId),
+          paymentMethod: collectForm.paymentMethod,
+          notes: collectForm.notes || (amountVal >= collectSale.balanceAmount ? 'Full balance settlement' : 'Partial payment')
         })
       });
-      markItemAsUpdated('sales', s.saleId);
+      markItemAsUpdated('sales', collectSale.saleId);
 
       // Automated WhatsApp notification for payment received
-      const newPaid = (s.paidAmount || 0) + formValues.amount;
-      const newBalance = Math.max(0, (s.totalAmount || 0) - newPaid);
+      const newPaid = (collectSale.paidAmount || 0) + amountVal;
+      const newBalance = Math.max(0, (collectSale.totalAmount || 0) - newPaid);
       const newStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL';
 
       const waMsg = createSalesWhatsAppMessage({
-        saleId: s.saleId,
-        customerName: s.customerName,
-        totalAmount: s.totalAmount,
+        saleId: collectSale.saleId,
+        customerName: collectSale.customerName,
+        totalAmount: collectSale.totalAmount,
         paidAmount: newPaid,
         balanceAmount: newBalance,
         paymentStatus: newStatus,
@@ -451,18 +386,19 @@ export default function Sales() {
       sendWhatsAppNotificationToPartner(apiRequest, {
         message: waMsg,
         eventType: 'SALES_PAYMENT',
-        referenceId: String(s.saleId),
+        referenceId: String(collectSale.saleId),
         category: 'SALES',
         actionType: 'PAYMENT',
         performedBy: 'Admin'
       });
 
-      const isFull = formValues.amount >= s.balanceAmount;
+      const isFull = amountVal >= collectSale.balanceAmount;
+      setShowCollectModal(false);
       Swal.fire({
         title: isFull ? 'Invoice Settled!' : 'Payment Recorded!',
         text: isFull 
-          ? `Full payment of ${money(formValues.amount)} recorded into ${chosenAccName}. Invoice is now fully paid!` 
-          : `Partial payment of ${money(formValues.amount)} recorded into ${chosenAccName}. Remaining balance: ${money(newBalance)}`,
+          ? `Full payment of ${money(amountVal)} recorded into ${chosenAccName}. Invoice is now fully paid!` 
+          : `Partial payment of ${money(amountVal)} recorded into ${chosenAccName}. Remaining balance: ${money(newBalance)}`,
         icon: 'success',
         timer: 3000,
         showConfirmButton: true
@@ -470,6 +406,8 @@ export default function Sales() {
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
+    } finally {
+      setIsCollecting(false);
     }
   };
 
@@ -1346,86 +1284,130 @@ export default function Sales() {
       )}
 
       {/* =========================================================
-          PAYMENT HISTORY MODAL
+          PAYMENT HISTORY MODAL (Matching Emerald Collect Theme)
       ========================================================= */}
       {showPaymentModal && paymentSale && (
-        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
-          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-lg max-h-[90vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-sm sm:max-w-lg max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
             {/* Header */}
-            <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-5 py-4 text-white flex items-center justify-between overflow-hidden shrink-0">
-              <div className="absolute -right-6 -top-6 w-24 h-24 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
-              <div className="flex items-center gap-3 relative z-10">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-white/10 text-blue-300 backdrop-blur-md border border-white/10 shadow-inner">
-                  <WalletCards size={20} />
+            <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/20 shadow-inner">
+                  <WalletCards size={18} />
                 </div>
                 <div>
-                  <h3 className="text-base font-black text-white leading-tight mb-0.5">Payment History</h3>
-                  <p className="text-[10px] font-bold text-slate-300 uppercase tracking-wider">
+                  <h3 className="text-sm sm:text-base font-black text-white leading-tight">Payment History</h3>
+                  <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider truncate max-w-[200px] sm:max-w-xs">
                     {paymentSale.customerName} • INV-{paymentSale.saleId}
                   </p>
                 </div>
               </div>
-              <button onClick={() => setShowPaymentModal(false)} className="relative z-10 text-slate-400 hover:text-white p-2 rounded-full hover:bg-white/10 transition-colors">
-                ✕
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
+                <X size={18} />
               </button>
             </div>
 
-            <div className="p-5 overflow-y-auto flex-1 bg-slate-50/50">
-              {/* Payment Stats */}
-              <div className="grid grid-cols-3 bg-white rounded-xl border border-slate-200/60 shadow-sm p-4 mb-6">
-                <div className="text-center">
-                  <p className="text-[10px] uppercase font-bold text-slate-500 mb-1">Total Bill</p>
-                  <p className="font-black text-slate-900">{money(paymentSale.totalAmount)}</p>
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-slate-50/50 space-y-4">
+              {/* Financial Stats Summary Card */}
+              <div className="bg-white rounded-xl border border-slate-200/80 p-3 shadow-sm text-xs space-y-1.5">
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Customer:</span>
+                  <span className="text-slate-800 font-black truncate max-w-[180px]">{paymentSale.customerName}</span>
                 </div>
-                <div className="text-center border-l border-slate-100">
-                  <p className="text-[10px] uppercase font-bold text-emerald-600 mb-1">Collected</p>
-                  <p className="font-black text-emerald-700">{money(paymentSale.paidAmount)}</p>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Total Bill:</span>
+                  <span className="text-slate-800 font-black">{money(paymentSale.totalAmount)}</span>
                 </div>
-                <div className="text-center border-l border-slate-100">
-                  <p className={`text-[10px] uppercase font-bold mb-1 ${paymentSale.balanceAmount > 0 ? 'text-rose-500' : 'text-slate-500'}`}>Balance</p>
-                  <p className={`font-black ${paymentSale.balanceAmount > 0 ? 'text-rose-600' : 'text-slate-900'}`}>{money(paymentSale.balanceAmount)}</p>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Already Paid:</span>
+                  <span className="text-emerald-600 font-black">{money(paymentSale.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 text-rose-600 font-extrabold">
+                  <span>Remaining Balance:</span>
+                  <span className="font-black text-sm">{money(paymentSale.balanceAmount)}</span>
                 </div>
               </div>
 
               {/* Add Payment Form */}
               {paymentSale.balanceAmount > 0 && (
-                <div className="mb-6 bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm">
-                  <h4 className="text-xs font-black text-slate-900 mb-4 flex items-center gap-2">
-                    <Plus size={14} className="text-blue-600" /> Record New Payment
+                <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm space-y-3">
+                  <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                    <Plus size={14} className="text-emerald-600" /> Record New Payment
                   </h4>
-                  <form onSubmit={handleAddPayment} className="flex flex-col gap-4">
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <form onSubmit={handleAddPayment} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Amount (₹)</label>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                            Amount (₹)
+                          </label>
+                          {parseFloat(newPayment.amount) !== paymentSale.balanceAmount && (
+                            <button
+                              type="button"
+                              onClick={() => setNewPayment({ ...newPayment, amount: String(paymentSale.balanceAmount) })}
+                              className="text-[9px] font-black text-emerald-600 hover:underline"
+                            >
+                              Full (₹{paymentSale.balanceAmount})
+                            </button>
+                          )}
+                        </div>
                         <input
-                          type="number" step="0.01" required
+                          type="number" step="any" required
                           value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
+                          className="w-full bg-white border-2 border-emerald-500/70 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-sm font-black text-emerald-800 placeholder:text-slate-400"
                           placeholder={`Max: ${paymentSale.balanceAmount}`}
                         />
                       </div>
                       <div>
-                        <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Deposit Account</label>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                          Deposit Account
+                        </label>
                         <select
                           required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
-                          className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold text-slate-700"
+                          className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
                         >
                           <option value="">Select Account</option>
                           {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
                         </select>
                       </div>
                     </div>
+
+                    {/* Payment Method - Segmented Pill Buttons */}
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-600 uppercase mb-1.5">Notes (Optional)</label>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                        Payment Method
+                      </label>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                        {['CASH', 'GPAY', 'PHONEPE', 'BANK TRANSFER', 'CHEQUE'].map(method => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => setNewPayment({ ...newPayment, paymentMethod: method })}
+                            className={`py-1.5 px-1 text-[10px] font-black rounded-lg border transition-all text-center truncate ${
+                              newPayment.paymentMethod === method
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {method}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Notes (Optional)
+                      </label>
                       <input
                         type="text"
                         value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
-                        className="w-full bg-slate-50 border border-slate-200 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-xl px-3 py-2 text-sm font-bold placeholder:text-slate-400"
+                        className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 placeholder:text-slate-400"
                         placeholder="e.g. Paid by GPay"
                       />
                     </div>
-                    <div className="flex justify-end mt-2">
-                      <button type="submit" className="bg-blue-600 text-white px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-700 transition-colors flex items-center gap-2 shadow-md shadow-blue-600/20">
+                    <div className="flex justify-end pt-1">
+                      <button type="submit" className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
                         <CheckCircle size={14} /> Save Payment
                       </button>
                     </div>
@@ -1434,10 +1416,12 @@ export default function Sales() {
               )}
 
               {/* Payments List */}
-              <div className="bg-white p-4 rounded-xl border border-slate-200/60 shadow-sm">
-                <h4 className="text-xs font-black text-slate-900 mb-3 uppercase tracking-wider">Payment Records</h4>
+              <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm">
+                <h4 className="text-xs font-black text-slate-900 mb-2.5 uppercase tracking-wider">
+                  Payment Records ({payments.length})
+                </h4>
                 {payments.length === 0 ? (
-                  <div className="text-center py-4 bg-slate-50 rounded-lg border border-slate-100 border-dashed">
+                  <div className="text-center py-4 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
                     <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
                   </div>
                 ) : (
@@ -1446,16 +1430,18 @@ export default function Sales() {
                       <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors group">
                         <div className="flex flex-col">
                           <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
-                          <div className="flex items-center flex-wrap gap-2 text-[10px] font-bold text-slate-500 mt-1">
+                          <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-bold text-slate-500 mt-1">
                             <span>{formatDateDDMMYYYY(p.createdAt)}</span>
                             <span className="text-slate-300">•</span>
-                            <span className="text-blue-700 bg-blue-100 px-1.5 py-0.5 rounded uppercase">{p.accountName}</span>
+                            <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-black text-[9px] uppercase">{p.paymentMethod || 'CASH'}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-slate-700 bg-slate-200/70 px-1.5 py-0.5 rounded uppercase font-bold text-[9px]">{p.accountName}</span>
                             {p.notes && <><span className="text-slate-300">•</span><span className="text-slate-500">{p.notes}</span></>}
                           </div>
                         </div>
                         <button
                           onClick={() => handleDeletePayment(p.paymentId)}
-                          className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-0 group-hover:opacity-100"
+                          className="p-2 text-slate-300 hover:text-rose-600 hover:bg-rose-100/50 rounded-lg transition-colors opacity-80 group-hover:opacity-100"
                           title="Delete Payment"
                         >
                           <Trash2 size={16} />
@@ -1466,6 +1452,166 @@ export default function Sales() {
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+      {/* =========================================================
+          QUICK COLLECT MODAL (100% Mobile Responsive)
+      ========================================================= */}
+      {showCollectModal && collectSale && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-3 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-full max-w-sm sm:max-w-md rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/20 shadow-inner">
+                  <WalletCards size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white leading-tight">Collect Payment</h3>
+                  <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider truncate max-w-[200px]">
+                    {collectSale.customerName} • INV-{collectSale.saleId}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCollectModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleConfirmCollect} className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3.5 bg-slate-50/50">
+              {/* Financial Summary Card */}
+              <div className="bg-white rounded-xl border border-slate-200/80 p-3 shadow-sm text-xs space-y-1.5">
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Customer:</span>
+                  <span className="text-slate-800 font-black truncate max-w-[180px]">{collectSale.customerName}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Total Bill:</span>
+                  <span className="text-slate-800 font-black">{money(collectSale.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Already Paid:</span>
+                  <span className="text-emerald-600 font-black">{money(collectSale.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 text-rose-600 font-extrabold">
+                  <span>Remaining Balance:</span>
+                  <span className="font-black text-sm">{money(collectSale.balanceAmount)}</span>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                    Amount to Collect (₹)
+                  </label>
+                  {parseFloat(collectForm.amount) !== collectSale.balanceAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setCollectForm({ ...collectForm, amount: collectSale.balanceAmount })}
+                      className="text-[9px] font-black text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-colors"
+                    >
+                      Reset to Full (₹{collectSale.balanceAmount})
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="1"
+                  max={collectSale.balanceAmount}
+                  required
+                  value={collectForm.amount}
+                  onChange={e => setCollectForm({ ...collectForm, amount: e.target.value })}
+                  className="w-full bg-white border-2 border-emerald-500/70 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3.5 py-2.5 text-base font-black text-emerald-800 placeholder:text-slate-400"
+                  placeholder="Enter amount"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Default is full balance <b>₹{collectSale.balanceAmount}</b>. Edit to collect partial.
+                </p>
+              </div>
+
+              {/* Deposit Into Account */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Deposit Into Account
+                </label>
+                <select
+                  required
+                  value={collectForm.accountId}
+                  onChange={e => setCollectForm({ ...collectForm, accountId: e.target.value })}
+                  className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800"
+                >
+                  <option value="">Select Account</option>
+                  {accounts.map(a => (
+                    <option key={a.accountId} value={a.accountId}>
+                      {a.accountName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Payment Method - Segmented Pill Buttons (No overflow!) */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['CASH', 'GPAY', 'PHONEPE', 'BANK TRANSFER', 'CHEQUE'].map(method => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setCollectForm({ ...collectForm, paymentMethod: method })}
+                      className={`py-2 px-1 text-[10px] font-black rounded-lg border transition-all text-center truncate ${
+                        collectForm.paymentMethod === method
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Remarks / Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={collectForm.notes}
+                  onChange={e => setCollectForm({ ...collectForm, notes: e.target.value })}
+                  className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 placeholder:text-slate-400"
+                  placeholder="e.g. Full settlement"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCollectModal(false)}
+                  className="w-1/3 bg-white text-slate-600 hover:text-slate-800 border border-slate-200 hover:bg-slate-50 rounded-xl py-2.5 text-xs font-bold transition-all shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCollecting}
+                  className="w-2/3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl py-2.5 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                >
+                  <CheckCircle size={14} />
+                  {isCollecting ? 'Collecting...' : `Collect ${money(collectForm.amount || 0)}`}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}
