@@ -16,7 +16,7 @@ import DateInput from '../components/DateInput';
 import SearchableSupplierSelect from '../components/SearchableSupplierSelect';
 
 export default function Purchase() {
-  const { apiRequest } = useAuth();
+  const { apiRequest, user } = useAuth();
   const [purchases, setPurchases] = useState([]);
   const [suppliers, setSuppliers] = useState([]);
   const [products, setProducts] = useState([]);
@@ -63,7 +63,16 @@ export default function Purchase() {
       const accs = Array.isArray(res.data) ? res.data : [];
       setAccounts(accs);
       if (accs.length > 0) {
-        setAccountName(prev => accs.some(a => a.accountName === prev) ? prev : accs[0].accountName);
+        const uName = (user?.username || '').toLowerCase();
+        const userAcc = accs.find(a => 
+          (uName && a.accountName?.toLowerCase().includes(uName)) ||
+          (uName && a.accountType?.toLowerCase().includes(uName))
+        );
+        if (userAcc) {
+          setAccountName(prev => (prev && prev !== 'Cash' && accs.some(a => a.accountName === prev)) ? prev : userAcc.accountName);
+        } else {
+          setAccountName(prev => accs.some(a => a.accountName === prev) ? prev : accs[0].accountName);
+        }
       }
     }).catch(console.error);
   };
@@ -836,7 +845,7 @@ export default function Purchase() {
                   <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Paid</p>
                   <p className="text-sm font-black text-slate-700">{money(invoice.paidAmount)}</p>
                   {invoice.paidAmount > 0 && (invoice.paymentMethodAccountName || invoice.accountName) && (
-                    <span className="text-[9px] font-bold text-blue-600 block truncate leading-tight">
+                    <span className="text-[9px] font-bold text-blue-600 block leading-tight break-words" title={invoice.paymentMethodAccountName || invoice.accountName}>
                       ({invoice.paymentMethodAccountName || invoice.accountName})
                     </span>
                   )}
