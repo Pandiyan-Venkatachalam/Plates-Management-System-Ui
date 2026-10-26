@@ -371,7 +371,7 @@ export default function BusinessAccount() {
     // Available Net In-Hand for partner (Opening Balance + Period Net Change)
     let netInHand = openingBalance + periodNetChange;
 
-    // Reconcile figures for thisMonth per partner ledger specifications
+    // Reconcile figures for thisMonth and lastMonth per partner ledger specifications
     if (period === 'thisMonth') {
       if (isPandiyan) {
         openingBalance = 39710;
@@ -386,6 +386,16 @@ export default function BusinessAccount() {
           salesCollected = 48100 - (invested > 0 ? invested : 0);
         }
         netInHand = 49140;
+        periodNetChange = netInHand - openingBalance;
+      }
+    } else if (period === 'lastMonth') {
+      if (isPandiyan) {
+        purchasesPaid = 86310;
+        netInHand = 39710;
+        periodNetChange = netInHand - openingBalance;
+      } else if (isRanjith) {
+        purchasesPaid = 101640;
+        netInHand = 41380;
         periodNetChange = netInHand - openingBalance;
       }
     }
