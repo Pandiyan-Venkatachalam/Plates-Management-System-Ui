@@ -52,6 +52,7 @@ export default function Purchase() {
   const [paymentPurchase, setPaymentPurchase] = useState(null);
   const [payments, setPayments] = useState([]);
   const [newPayment, setNewPayment] = useState({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const loadData = () => {
     apiRequest('/purchase').then(res => setPurchases(sortLatestFirst(res.data, ['purchaseId', 'id'], 'purchase'))).catch(console.error);
@@ -206,6 +207,7 @@ export default function Purchase() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    if (isSubmitting) return;
     if (!supplierId) {
       Swal.fire('Warning', 'Please select a supplier', 'warning');
       return;
@@ -255,6 +257,7 @@ export default function Purchase() {
         ? paymentContributions.map(c => ({ accountName: c.accountName, amount: parseFloat(c.amount) || 0 }))
         : (paidNum > 0 ? [{ accountName, amount: paidNum }] : [])
     };
+    setIsSubmitting(true);
     try {
       const currentSup = suppliers.find(s => String(s.supplierId) === String(supplierId));
       const supplierName = currentSup?.supplierName || 'Supplier';
@@ -338,6 +341,8 @@ export default function Purchase() {
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -360,18 +365,19 @@ export default function Purchase() {
 
   const handleDelete = async (id) => {
     const result = await Swal.fire({
-      title: 'Are you sure?',
-      text: "You want to delete this purchase?",
+      title: 'Delete Purchase?',
+      text: "This will delete the purchase bill, revert the stock, and refund the payment back to your account.",
       icon: 'warning',
       showCancelButton: true,
-      confirmButtonColor: '#10b981',
-      cancelButtonColor: '#ef4444',
-      confirmButtonText: 'Yes, delete it!'
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Yes, delete & revert!',
+      cancelButtonText: 'Cancel'
     });
     if (!result.isConfirmed) return;
     try {
       await apiRequest(`/purchase/${id}`, { method: 'DELETE' });
-      Swal.fire('Success', 'Purchase deleted successfully!', 'success');
+      Swal.fire('Deleted!', 'Purchase deleted, stock reverted, and payment refunded to account.', 'success');
       loadData();
     } catch (err) {
       Swal.fire('Error', err.message, 'error');
@@ -379,7 +385,8 @@ export default function Purchase() {
   };
 
   const money = (value) => {
-    const num = Number(value || 0);
+    let num = Number(value || 0);
+    if (Math.abs(num) < 0.001) num = 0;
     return new Intl.NumberFormat("en-IN", {
       style: "currency",
       currency: "INR",
@@ -1186,9 +1193,19 @@ export default function Purchase() {
                 </button>
                 <button
                   type="submit"
-                  className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+                  disabled={isSubmitting}
+                  className={`w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 ${isSubmitting ? 'opacity-60 cursor-not-allowed' : 'hover:from-blue-600 hover:to-blue-700 hover:shadow-brand-accent/40 hover:-translate-y-0.5'}`}
                 >
-                  {editingId ? <><Edit2 size={14} /> Update</> : <><CheckCircle size={14} /> Post</>}
+                  {isSubmitting ? (
+                    <>
+                      <span className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></span>
+                      <span>Processing...</span>
+                    </>
+                  ) : editingId ? (
+                    <><Edit2 size={14} /> Update</>
+                  ) : (
+                    <><CheckCircle size={14} /> Post</>
+                  )}
                 </button>
               </div>
             </form>
