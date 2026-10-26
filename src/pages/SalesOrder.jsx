@@ -34,7 +34,7 @@ export default function SalesOrder({ onNavigateToSale }) {
   const [convertItems, setConvertItems] = useState([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
   const [convertAdjustment, setConvertAdjustment] = useState(0);
   const [convertPaidAmount, setConvertPaidAmount] = useState(0);
-  const [convertAccountName, setConvertAccountName] = useState('Cash');
+  const [convertAccountName, setConvertAccountName] = useState('');
   const [converting, setConverting] = useState(false);
 
   // Modal / Form toggle state
@@ -258,7 +258,7 @@ export default function SalesOrder({ onNavigateToSale }) {
     setConvertItems(initialItems);
     const initCost = initialItems.reduce((sum, item) => sum + ((parseFloat(item.quantity) || 0) * (parseFloat(item.unitPrice) || 0)), 0);
     setConvertPaidAmount(initCost);
-    if (accounts.length > 0 && !convertAccountName) {
+    if (accounts.length > 0 && (!convertAccountName || !accounts.some(a => a.accountName === convertAccountName))) {
       setConvertAccountName(accounts[0].accountName);
     }
   };
@@ -377,7 +377,7 @@ export default function SalesOrder({ onNavigateToSale }) {
         customerId: parseInt(targetCustId),
         paidAmount: parseFloat(convertPaidAmount) || 0,
         adjustment: parseFloat(convertAdjustment) || 0,
-        paymentMethodAccountName: convertAccountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash'),
+        paymentMethodAccountName: (accounts.some(a => a.accountName === convertAccountName) ? convertAccountName : (accounts[0]?.accountName || 'Cash')),
         notes: convertModalOrder.notes || '',
         itemAllocations: convertItems.map(i => ({
           productId: parseInt(i.productId),
