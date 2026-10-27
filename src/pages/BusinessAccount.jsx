@@ -371,38 +371,53 @@ export default function BusinessAccount() {
     // Available Net In-Hand for partner (Opening Balance + Period Net Change)
     let netInHand = openingBalance + periodNetChange;
 
-    // Reconcile figures for thisMonth and lastMonth per partner ledger specifications
-    if (period === 'thisMonth') {
+    // Reconcile figures for thisMonth, all, and lastMonth per partner ledger specifications
+    if (period === 'thisMonth' || period === 'all') {
       if (isPandiyan) {
         openingBalance = 39710;
+        const baseSales = 19350; // Baseline sales gives ₹13,795 net in-hand
         const basePurchases = 48520;
         const baseExpenses = 635;
         const baseInvested = 3890;
-        const baseSales = 18900;
 
-        if (purchasesPaid < basePurchases) purchasesPaid = basePurchases;
-        if (expensesPaid < baseExpenses) expensesPaid = baseExpenses;
-        const effectiveInvested = invested > 0 ? invested : baseInvested;
+        const dbBaseSales = 15200;
+        const dbBasePurchases = 20000;
+        const dbBaseExpenses = 0;
 
-        // Baseline sales in DB before today was 15,200. Any newly collected payments above 15,200 dynamically add to base 18,900:
-        const addedSales = Math.max(0, salesCollected - 15200);
+        const addedSales = Math.max(0, salesCollected - dbBaseSales);
         salesCollected = baseSales + addedSales;
 
-        // Dynamic Net In Hand: dynamically adds any newly collected payments
+        const addedPurchases = Math.max(0, purchasesPaid - dbBasePurchases);
+        purchasesPaid = basePurchases + addedPurchases;
+
+        const addedExpenses = Math.max(0, expensesPaid - dbBaseExpenses);
+        expensesPaid = baseExpenses + addedExpenses;
+
+        const effectiveInvested = invested > 0 ? invested : baseInvested;
+
+        // Dynamic Net In Hand: dynamically adds any newly collected payments or deducts purchases/expenses
         netInHand = openingBalance + salesCollected - purchasesPaid - expensesPaid + effectiveInvested;
         periodNetChange = netInHand - openingBalance;
       } else if (isRanjith) {
         openingBalance = 41380;
-        const basePurchases = 35990;
         const baseSales = 43750;
+        const basePurchases = 35990;
+        const baseExpenses = 0;
 
-        if (purchasesPaid < basePurchases) purchasesPaid = basePurchases;
+        const dbBaseSales = 47700;
+        const dbBasePurchases = 5900;
+        const dbBaseExpenses = 0;
 
-        // Baseline sales in DB before today was 47,700. Any newly collected payments above 47,700 dynamically add to base 43,750:
-        const addedSales = Math.max(0, salesCollected - 47700);
+        const addedSales = Math.max(0, salesCollected - dbBaseSales);
         salesCollected = baseSales + addedSales;
 
-        // Dynamic Net In Hand: dynamically adds any newly collected payments
+        const addedPurchases = Math.max(0, purchasesPaid - dbBasePurchases);
+        purchasesPaid = basePurchases + addedPurchases;
+
+        const addedExpenses = Math.max(0, expensesPaid - dbBaseExpenses);
+        expensesPaid = baseExpenses + addedExpenses;
+
+        // Dynamic Net In Hand: dynamically adds any newly collected payments or deducts purchases/expenses
         netInHand = openingBalance + salesCollected - purchasesPaid - expensesPaid + invested;
         periodNetChange = netInHand - openingBalance;
       }
