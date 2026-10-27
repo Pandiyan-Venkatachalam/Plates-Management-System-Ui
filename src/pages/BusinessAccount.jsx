@@ -253,7 +253,10 @@ export default function BusinessAccount() {
     // ── 1. Opening Balance Calculation (Cumulative liquid cash before fromDate) ──
     let openingBalance = 0;
     if (period !== 'all' && fromDate) {
-      const priorAccTxs = allAccTxs.filter(t => isDateBefore(t.transactionDate || t.createdAt, fromDate));
+      const priorAccTxs = allAccTxs.filter(t => {
+        const txDate = t.transactionDate || t.createdAt || t.CreatedAt;
+        return isDateBefore(txDate, fromDate);
+      });
 
       const priorCredits = priorAccTxs
         .filter(t => t.transactionType === 'CREDIT')
@@ -269,7 +272,8 @@ export default function BusinessAccount() {
         const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
         const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
         const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !allAccTxs.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
-        return (isPartnerMatch || isAccMatch) && notInTx && isDateBefore(l.transactionDate || l.createdAt, fromDate);
+        const lDate = l.transactionDate || l.createdAt || l.CreatedAt;
+        return (isPartnerMatch || isAccMatch) && notInTx && isDateBefore(lDate, fromDate);
       });
 
       const priorUnlinkedInvested = priorUnlinkedLedgers.reduce((sum, l) => {
@@ -282,9 +286,10 @@ export default function BusinessAccount() {
     }
 
     // ── 2. Current Period Transactions (Within fromDate to toDate) ──
-    const accTx = allAccTxs.filter(t =>
-      period === 'all' || isDateInRange(t.transactionDate || t.createdAt, fromDate, toDate)
-    );
+    const accTx = allAccTxs.filter(t => {
+      const txDate = t.transactionDate || t.createdAt || t.CreatedAt;
+      return period === 'all' || isDateInRange(txDate, fromDate, toDate);
+    });
 
     // Helpers to classify transactions cleanly (supporting both SALE and SALE_PAYMENT, PURCHASE and PURCHASE_PAYMENT)
     const isSaleCredit = (t) => {
@@ -346,7 +351,8 @@ export default function BusinessAccount() {
       const isPartnerMatch = pNameLower && (lpName.includes(pNameLower) || pNameLower.includes(lpName));
       const isAccMatch = accNameLower && (accNameLower.includes(lpName) || lpName.includes(accNameLower));
       const notInTx = !existingRefIds.has(`LEDGER-${l.ledgerId}`) && !allAccTxs.some(t => t.amount === l.amount && (t.description || '').includes(l.description || ''));
-      return (isPartnerMatch || isAccMatch) && notInTx && (period === 'all' || isDateInRange(l.transactionDate || l.createdAt, fromDate, toDate));
+      const lDate = l.transactionDate || l.createdAt || l.CreatedAt;
+      return (isPartnerMatch || isAccMatch) && notInTx && (period === 'all' || isDateInRange(lDate, fromDate, toDate));
     });
 
     const unlinkedLedgerInvested = unlinkedLedgers.reduce((sum, l) => {
@@ -370,68 +376,6 @@ export default function BusinessAccount() {
 
     // Available Net In-Hand for partner (Opening Balance + Period Net Change)
     let netInHand = openingBalance + periodNetChange;
-
-    // Reconcile figures for thisMonth, all, and lastMonth per partner ledger specifications
-    if (period === 'thisMonth' || period === 'all') {
-      if (isPandiyan) {
-        openingBalance = 39710;
-        const baseSales = 19350; // Baseline sales gives ₹13,795 net in-hand
-        const basePurchases = 48520;
-        const baseExpenses = 635;
-        const baseInvested = 3890;
-
-        const dbBaseSales = 15200;
-        const dbBasePurchases = 20000;
-        const dbBaseExpenses = 0;
-
-        const addedSales = Math.max(0, salesCollected - dbBaseSales);
-        salesCollected = baseSales + addedSales;
-
-        const addedPurchases = Math.max(0, purchasesPaid - dbBasePurchases);
-        purchasesPaid = basePurchases + addedPurchases;
-
-        const addedExpenses = Math.max(0, expensesPaid - dbBaseExpenses);
-        expensesPaid = baseExpenses + addedExpenses;
-
-        const effectiveInvested = invested > 0 ? invested : baseInvested;
-
-        // Dynamic Net In Hand: dynamically adds any newly collected payments or deducts purchases/expenses
-        netInHand = openingBalance + salesCollected - purchasesPaid - expensesPaid + effectiveInvested;
-        periodNetChange = netInHand - openingBalance;
-      } else if (isRanjith) {
-        openingBalance = 41380;
-        const baseSales = 43750;
-        const basePurchases = 35990;
-        const baseExpenses = 0;
-
-        const dbBaseSales = 47700;
-        const dbBasePurchases = 5900;
-        const dbBaseExpenses = 0;
-
-        const addedSales = Math.max(0, salesCollected - dbBaseSales);
-        salesCollected = baseSales + addedSales;
-
-        const addedPurchases = Math.max(0, purchasesPaid - dbBasePurchases);
-        purchasesPaid = basePurchases + addedPurchases;
-
-        const addedExpenses = Math.max(0, expensesPaid - dbBaseExpenses);
-        expensesPaid = baseExpenses + addedExpenses;
-
-        // Dynamic Net In Hand: dynamically adds any newly collected payments or deducts purchases/expenses
-        netInHand = openingBalance + salesCollected - purchasesPaid - expensesPaid + invested;
-        periodNetChange = netInHand - openingBalance;
-      }
-    } else if (period === 'lastMonth') {
-      if (isPandiyan) {
-        purchasesPaid = 86310;
-        netInHand = 39710;
-        periodNetChange = netInHand - openingBalance;
-      } else if (isRanjith) {
-        purchasesPaid = 101640;
-        netInHand = 41380;
-        periodNetChange = netInHand - openingBalance;
-      }
-    }
 
     return {
       acc,

@@ -41,9 +41,10 @@ export const formatDateToYMD = (date) => {
 export const getCurrentMonthRange = () => {
   const now = new Date();
   const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+  const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
   return {
     fromDate: formatDateToYMD(startOfMonth),
-    toDate: formatDateToYMD(now)
+    toDate: formatDateToYMD(endOfMonth)
   };
 };
 
@@ -102,9 +103,9 @@ export const getLocalDateString = (dateInput) => {
 
 export const isDateInRange = (dateInput, fromDateStr, toDateStr) => {
   if (!fromDateStr && !toDateStr) return true;
-  if (!dateInput) return true;
+  if (!dateInput) return false;
   const dateStr = getLocalDateString(dateInput);
-  if (!dateStr) return true;
+  if (!dateStr) return false;
   if (fromDateStr && dateStr < fromDateStr) return false;
   if (toDateStr && dateStr > toDateStr) return false;
   return true;
