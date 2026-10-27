@@ -1,0 +1,1643 @@
+import React, { useEffect, useState } from 'react';
+import { useAuth } from '../context/AuthContext';
+import {
+  Plus, Trash2, Edit2, Search, CalendarDays, ChevronDown,
+  ChevronRight, FileText, CircleDollarSign, WalletCards,
+  TrendingUp, MoreHorizontal, Pencil, Eye, CheckCircle, Download, X
+} from 'lucide-react';
+import { Capacitor } from '@capacitor/core';
+import { downloadCsvCrossPlatform } from '../utils/exportCsv';
+import Swal from 'sweetalert2';
+import { handlePrint } from '../utils/printHelper';
+import { sortLatestFirst, markItemAsUpdated } from '../utils/sortHelper';
+import { getCurrentMonthRange, getPresetDateRange, isDateInRange, formatDateDDMMYYYY } from '../utils/dateHelper';
+import { sendWhatsAppNotificationToPartner, createSalesWhatsAppMessage } from '../utils/whatsappHelper';
+import SearchableCustomerSelect from '../components/SearchableCustomerSelect';
+import DateInput from '../components/DateInput';
+import type { Sale as SaleType } from '../types';
+
+export default function Sales() {
+  const { apiRequest } = useAuth();
+  const [sales, setSales] = useState<SaleType[]>([]);
+  const [customers, setCustomers] = useState<any[]>([]);
+  const [products, setProducts] = useState<any[]>([]);
+  const [accounts, setAccounts] = useState<any[]>([]);
+  const [selectedSale, setSelectedSale] = useState<SaleType | null>(null);
+  const [batches, setBatches] = useState<any[]>([]);
+
+  // Modal / Form toggle state
+  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Filters state - Default to Current Month (Auto-resets on 1st of every month)
+  const initialDates = getCurrentMonthRange();
+  const [search, setSearch] = useState('');
+  const [fromDate, setFromDate] = useState(initialDates.fromDate);
+  const [toDate, setToDate] = useState(initialDates.toDate);
+  const [datePreset, setDatePreset] = useState('thisMonth');
+  const [balanceFilter, setBalanceFilter] = useState('all');
+
+  // Form State
+  const [customerId, setCustomerId] = useState('');
+  const [items, setItems] = useState<any[]>([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
+  const [paidAmount, setPaidAmount] = useState<any>(0);
+  const [accountName, setAccountName] = useState('Cash');
+  const [editingId, setEditingId] = useState<any>(null);
+  const [editingSaleDate, setEditingSaleDate] = useState<any>(null);
+  const [adjustment, setAdjustment] = useState<any>(0);
+
+  // Payment Modal States
+  const [showPaymentModal, setShowPaymentModal] = useState(false);
+  const [paymentSale, setPaymentSale] = useState<any>(null);
+  const [payments, setPayments] = useState<any[]>([]);
+  const [newPayment, setNewPayment] = useState<any>({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
+
+  // Quick Collect Modal States
+  const [showCollectModal, setShowCollectModal] = useState(false);
+  const [collectSale, setCollectSale] = useState<any>(null);
+  const [collectForm, setCollectForm] = useState<any>({ amount: '', accountId: '', paymentMethod: 'CASH', notes: '' });
+  const [isCollecting, setIsCollecting] = useState(false);
+
+  const loadData = () => {
+    apiRequest('/sales').then(res => setSales(sortLatestFirst(res.data, ['saleId', 'id'], 'sales'))).catch(console.error);
+    apiRequest('/customer').then(res => setCustomers(sortLatestFirst(res.data, ['customerId', 'id'], 'customer'))).catch(console.error);
+    apiRequest('/product').then(res => setProducts(res.data)).catch(console.error);
+    apiRequest('/account').then(res => {
+      const accs = Array.isArray(res.data) ? res.data : [];
+      setAccounts(accs);
+      if (accs.length > 0) {
+        setAccountName(prev => accs.some(a => a.accountName === prev) ? prev : accs[0].accountName);
+      }
+    }).catch(console.error);
+    apiRequest('/batch').then(res => setBatches(res.data)).catch(console.error);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, []);
+
+  const addItemRow = () => setItems([...items, { productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
+  const removeItemRow = (idx) => setItems(items.filter((_, i) => i !== idx));
+  const updateItem = (idx, field, val) => {
+    setItems(items.map((item, i) => i === idx ? { ...item, [field]: val } : item));
+  };
+
+  const totalCost = items.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0);
+  const finalTotal = totalCost + (parseFloat(adjustment) || 0);
+  const balanceDue = finalTotal - (parseFloat(paidAmount) || 0);
+
+  // Filter Sales Logic (latest and recently updated first)
+  const filteredSales = sortLatestFirst(
+    sales.filter(s => {
+      // Search filter
+      const matchesSearch = !search ||
+        (s.customerName && s.customerName.toLowerCase().includes(search.toLowerCase())) ||
+        (s.saleId && `INV-${s.saleId}`.toLowerCase().includes(search.toLowerCase()));
+
+      // Date range filter using clean string comparison
+      const matchesDate = isDateInRange(s.saleDate, fromDate, toDate);
+
+      // Balance filter
+      let matchesBalance = true;
+      if (balanceFilter === 'paid') {
+        matchesBalance = (s.balanceAmount <= 0);
+      } else if (balanceFilter === 'due') {
+        matchesBalance = (s.balanceAmount > 0);
+      }
+
+      return matchesSearch && matchesDate && matchesBalance;
+    }),
+    ['saleId', 'id'],
+    'sales'
+  );
+
+  const handleSubmit = async (e) => {
+    e.preventDefault();
+    if (!customerId) {
+      Swal.fire('Warning', 'Please select a customer', 'warning');
+      return;
+    }
+    const payload = {
+      customerId: parseInt(customerId),
+      saleDate: new Date().toISOString(),
+      details: items.map(i => ({
+        productId: parseInt(i.productId),
+        quantity: parseInt(i.quantity),
+        unitPrice: parseFloat(i.unitPrice),
+        batchId: parseInt(i.batchId)
+      })),
+      adjustment: parseFloat(adjustment) || 0,
+      paidAmount: parseFloat(paidAmount),
+      paymentMethodAccountName: accountName
+    };
+    try {
+      const currentCust = customers.find(c => String(c.customerId) === String(customerId));
+      const customerName = currentCust?.customerName || 'Customer';
+
+      if (editingId) {
+        await apiRequest(`/sales/${editingId}`, {
+          method: 'PUT',
+          body: JSON.stringify({
+            saleId: editingId,
+            customerId: parseInt(customerId),
+            saleDate: editingSaleDate || new Date().toISOString(),
+            details: items.map(i => ({
+              productId: parseInt(i.productId),
+              quantity: parseInt(i.quantity),
+              unitPrice: parseFloat(i.unitPrice),
+              batchId: parseInt(i.batchId)
+            })),
+            totalAmount: finalTotal,
+            paidAmount: parseFloat(paidAmount),
+            paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : parseFloat(paidAmount) > 0 ? 'PARTIAL' : 'UNPAID',
+            status: 'COMPLETED',
+            adjustment: parseFloat(adjustment) || 0,
+            paymentMethodAccountName: accountName
+          })
+        });
+        markItemAsUpdated('sales', editingId);
+
+        // Automated WhatsApp Notification to Partner
+        const waMsg = createSalesWhatsAppMessage({
+          saleId: editingId,
+          customerName,
+          totalAmount: finalTotal,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, finalTotal - parseFloat(paidAmount)),
+          paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'PARTIAL',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartner(apiRequest, {
+          message: waMsg,
+          eventType: 'SALES_UPDATE',
+          referenceId: String(editingId),
+          category: 'SALES',
+          actionType: 'UPDATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Invoice updated & WhatsApp alert sent!', 'success');
+      } else {
+        const createRes = await apiRequest('/sales/create-sale', {
+          method: 'POST',
+          body: JSON.stringify(payload)
+        });
+        const createdSaleId = createRes?.data?.saleId || 'New';
+
+        // Automated WhatsApp Notification to Partner
+        const waMsg = createSalesWhatsAppMessage({
+          saleId: createdSaleId,
+          customerName,
+          totalAmount: finalTotal,
+          paidAmount: parseFloat(paidAmount),
+          balanceAmount: Math.max(0, finalTotal - parseFloat(paidAmount)),
+          paymentStatus: parseFloat(paidAmount) >= finalTotal ? 'PAID' : 'UNPAID',
+          handledBy: 'Admin'
+        });
+        sendWhatsAppNotificationToPartner(apiRequest, {
+          message: waMsg,
+          eventType: 'SALES_CREATE',
+          referenceId: String(createdSaleId),
+          category: 'SALES',
+          actionType: 'CREATE',
+          performedBy: 'Admin'
+        });
+
+        Swal.fire('Success', 'Sale transaction recorded & Partner alerted via WhatsApp!', 'success');
+      }
+      setItems([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
+      setCustomerId('');
+      setPaidAmount(0);
+      setAdjustment(0);
+      setEditingId(null);
+      setEditingSaleDate(null);
+      setShowCreateForm(false);
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleEdit = (s) => {
+    setEditingId(s.saleId);
+    setEditingSaleDate(s.saleDate);
+    setCustomerId(s.customerId ? String(s.customerId) : '');
+    setPaidAmount(s.paidAmount);
+    setAccountName(s.paymentMethodAccountName || s.accountName || (accounts.length > 0 ? accounts[0].accountName : 'Cash'));
+    setItems(s.details && s.details.length > 0 ? s.details.map(d => ({
+      productId: d.productId ? String(d.productId) : '',
+      batchId: d.batchId ? String(d.batchId) : '',
+      quantity: d.quantity,
+      unitPrice: d.unitPrice
+    })) : [{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
+    const calcDetailTotal = s.details?.reduce((sum, item) => sum + (item.quantity * item.unitPrice), 0) || 0;
+    setAdjustment(s.totalAmount - calcDetailTotal);
+    setShowCreateForm(true);
+  };
+
+  const handleDelete = async (id) => {
+    const result = await Swal.fire({
+      title: 'Are you sure?',
+      text: "You want to delete this invoice?",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#10b981',
+      cancelButtonColor: '#ef4444',
+      confirmButtonText: 'Yes, delete it!'
+    });
+    if (!result.isConfirmed) return;
+    try {
+      await apiRequest(`/sales/${id}`, { method: 'DELETE' });
+      Swal.fire('Deleted!', 'Invoice deleted!', 'success');
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const fetchPayments = async (saleId) => {
+    try {
+      const res = await apiRequest(`/sales/${saleId}/payments`);
+      setPayments(res.data);
+    } catch (err) {
+      console.error(err);
+    }
+  };
+
+  const openPaymentModal = (sale) => {
+    setPaymentSale(sale);
+    setPayments([]);
+    setNewPayment({ amount: '', accountId: accounts.length > 0 ? accounts[0].accountId : '', paymentMethod: 'CASH', notes: '' });
+    setShowPaymentModal(true);
+    fetchPayments(sale.saleId);
+  };
+
+  const handleAddPayment = async (e) => {
+    e.preventDefault();
+    if (!newPayment.amount || parseFloat(newPayment.amount) <= 0) {
+      Swal.fire('Invalid Amount', 'Amount must be greater than zero.', 'warning');
+      return;
+    }
+    if (parseFloat(newPayment.amount) > paymentSale.balanceAmount) {
+      Swal.fire('Excess Amount', `You cannot collect more than the remaining balance of ₹${paymentSale.balanceAmount}`, 'warning');
+      return;
+    }
+    if (!newPayment.accountId) {
+      Swal.fire('Error', 'Please select a deposit account', 'error');
+      return;
+    }
+    try {
+      await apiRequest(`/sales/${paymentSale.saleId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: parseFloat(newPayment.amount),
+          accountId: parseInt(newPayment.accountId),
+          paymentMethod: newPayment.paymentMethod,
+          notes: newPayment.notes
+        })
+      });
+      Swal.fire('Success', 'Payment recorded', 'success');
+      setNewPayment({ ...newPayment, amount: '', notes: '' });
+      fetchPayments(paymentSale.saleId);
+      loadData(); // refresh sales table
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleDeletePayment = async (paymentId) => {
+    const result = await Swal.fire({
+      title: 'Delete Payment?',
+      text: 'Are you sure you want to delete this payment record?',
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'Yes, delete it!',
+      cancelButtonText: 'Cancel'
+    });
+    if (!result.isConfirmed) return;
+
+    try {
+      await apiRequest(`/sales/${paymentSale.saleId}/payments/${paymentId}`, {
+        method: 'DELETE'
+      });
+      Swal.fire({
+        title: 'Deleted!',
+        text: 'Payment record deleted.',
+        icon: 'success',
+        timer: 1500,
+        showConfirmButton: false
+      });
+      fetchPayments(paymentSale.saleId);
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    }
+  };
+
+  const handleCollectPayment = (s) => {
+    if (!s || s.balanceAmount <= 0) {
+      Swal.fire('Already Settled', `Invoice INV-${s?.saleId} is already fully paid.`, 'info');
+      return;
+    }
+
+    const defaultAcc = accounts.find(a => 
+      a.accountName === (s.paymentMethodAccountName || s.accountName)
+    ) || (accounts.length > 0 ? accounts[0] : null);
+
+    setCollectSale(s);
+    setCollectForm({
+      amount: s.balanceAmount,
+      accountId: defaultAcc ? defaultAcc.accountId : (accounts[0]?.accountId || ''),
+      paymentMethod: 'CASH',
+      notes: ''
+    });
+    setShowCollectModal(true);
+  };
+
+  const handleConfirmCollect = async (e) => {
+    e.preventDefault();
+    if (!collectSale) return;
+    const amountVal = parseFloat(collectForm.amount);
+    if (!amountVal || isNaN(amountVal) || amountVal <= 0) {
+      Swal.fire('Invalid Amount', 'Please enter a valid amount greater than 0.', 'warning');
+      return;
+    }
+    if (amountVal > collectSale.balanceAmount) {
+      Swal.fire('Excess Amount', `Cannot collect more than the remaining balance of ${money(collectSale.balanceAmount)}`, 'warning');
+      return;
+    }
+    if (!collectForm.accountId) {
+      Swal.fire('Select Account', 'Please select a deposit account.', 'warning');
+      return;
+    }
+
+    setIsCollecting(true);
+    try {
+      const chosenAcc = accounts.find(a => a.accountId === parseInt(collectForm.accountId));
+      const chosenAccName = chosenAcc ? chosenAcc.accountName : 'Selected Account';
+
+      await apiRequest(`/sales/${collectSale.saleId}/payments`, {
+        method: 'POST',
+        body: JSON.stringify({
+          amount: amountVal,
+          accountId: parseInt(collectForm.accountId),
+          paymentMethod: collectForm.paymentMethod,
+          notes: collectForm.notes || (amountVal >= collectSale.balanceAmount ? 'Full balance settlement' : 'Partial payment')
+        })
+      });
+      markItemAsUpdated('sales', collectSale.saleId);
+
+      // Automated WhatsApp notification for payment received
+      const newPaid = (collectSale.paidAmount || 0) + amountVal;
+      const newBalance = Math.max(0, (collectSale.totalAmount || 0) - newPaid);
+      const newStatus = newBalance <= 0 ? 'PAID' : 'PARTIAL';
+
+      const waMsg = createSalesWhatsAppMessage({
+        saleId: collectSale.saleId,
+        customerName: collectSale.customerName,
+        totalAmount: collectSale.totalAmount,
+        paidAmount: newPaid,
+        balanceAmount: newBalance,
+        paymentStatus: newStatus,
+        handledBy: 'Admin'
+      });
+      sendWhatsAppNotificationToPartner(apiRequest, {
+        message: waMsg,
+        eventType: 'SALES_PAYMENT',
+        referenceId: String(collectSale.saleId),
+        category: 'SALES',
+        actionType: 'PAYMENT',
+        performedBy: 'Admin'
+      });
+
+      const isFull = amountVal >= collectSale.balanceAmount;
+      setShowCollectModal(false);
+      Swal.fire({
+        title: isFull ? 'Invoice Settled!' : 'Payment Recorded!',
+        text: isFull 
+          ? `Full payment of ${money(amountVal)} recorded into ${chosenAccName}. Invoice is now fully paid!` 
+          : `Partial payment of ${money(amountVal)} recorded into ${chosenAccName}. Remaining balance: ${money(newBalance)}`,
+        icon: 'success',
+        timer: 3000,
+        showConfirmButton: true
+      });
+      loadData();
+    } catch (err) {
+      Swal.fire('Error', err.message, 'error');
+    } finally {
+      setIsCollecting(false);
+    }
+  };
+
+  const money = (value) => {
+    const num = Number(value || 0);
+    return new Intl.NumberFormat("en-IN", {
+      style: "currency",
+      currency: "INR",
+      minimumFractionDigits: Number.isInteger(num) ? 0 : 2,
+      maximumFractionDigits: 2,
+    }).format(num);
+  };
+
+  // Totals calculations
+  const totalSalesVal = filteredSales.reduce((sum, s) => sum + s.totalAmount, 0);
+  const totalCollectedVal = filteredSales.reduce((sum, s) => sum + s.paidAmount, 0);
+  const totalDueVal = filteredSales.reduce((sum, s) => sum + s.balanceAmount, 0);
+
+  const getProductSizeStr = (productId) => {
+    const prod = products.find(p => p.productId === productId);
+    return prod ? prod.variantName : '';
+  };
+
+  const downloadCSV = async () => {
+    const rows = [
+      ['Date', 'Invoice No', 'Customer', 'Items Count', 'Total Amount', 'Paid Amount', 'Adjustment', 'Due Amount', 'Payment Status'],
+      ...filteredSales.map(s => [
+        formatDateDDMMYYYY(s.saleDate || s.invoiceDate),
+        s.invoiceNumber || '-',
+        s.customerName || 'Unknown',
+        s.items?.length || 0,
+        s.totalAmount || 0,
+        s.paidAmount || 0,
+        s.adjustment || 0,
+        s.dueAmount || 0,
+        s.paymentStatus || 'UNKNOWN'
+      ])
+    ];
+    const csv = rows.map(r => r.map(v => `"${String(v).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const filename = `Sales_Report_${new Date().getTime()}.csv`;
+    await downloadCsvCrossPlatform(csv, filename);
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* =========================================================
+          PREMIUM PRINT ONLY REPORT HEADER (Vinayaga Plates)
+      ========================================================= */}
+      <div className="hidden print:block mb-2 space-y-1.5">
+        <div className="text-center pb-1.5 border-b-2 border-slate-900">
+          <div className="flex items-center justify-center gap-3 mb-0.5">
+            <div className="h-[1.5px] w-12 bg-blue-900" />
+            <h1 className="text-2xl font-black tracking-[0.2em] text-blue-950 uppercase print-brand-title">
+              VINAYAGA PLATES
+            </h1>
+            <div className="h-[1.5px] w-12 bg-blue-900" />
+          </div>
+          <p className="text-[7.5px] font-bold text-slate-500 uppercase tracking-[0.3em]">
+            Manufacturing & Inventory Management System
+          </p>
+          <div className="mt-1">
+            <span className="inline-block px-3 py-0.5 rounded bg-slate-900 text-white font-extrabold text-[10px] uppercase tracking-widest">
+              Sales Invoices Report
+            </span>
+          </div>
+        </div>
+
+        {/* Structured KPI Metadata Strip */}
+        <div className="grid grid-cols-4 gap-2 border border-slate-300 rounded-lg p-1.5 bg-slate-50 text-left">
+          <div className="px-2 py-0.5 border-r border-slate-200">
+            <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Report Date</span>
+            <span className="text-[10px] font-black text-slate-900">{formatDateDDMMYYYY(new Date())}</span>
+          </div>
+          <div className="px-2 py-0.5 border-r border-slate-200">
+            <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Total Invoices</span>
+            <span className="text-[10px] font-black text-slate-900">{filteredSales.length} Records</span>
+          </div>
+          <div className="px-2 py-0.5 border-r border-slate-200">
+            <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Total Sales</span>
+            <span className="text-[10px] font-black text-blue-950">{money(totalSalesVal)}</span>
+          </div>
+          <div className="px-2 py-0.5">
+            <span className="block text-[7.5px] font-extrabold text-slate-500 uppercase tracking-wider">Total Due</span>
+            <span className="text-[10px] font-black text-rose-600">{money(totalDueVal)}</span>
+          </div>
+        </div>
+      </div>
+
+      {/* =========================================================
+          DESKTOP HEADER
+      ========================================================= */}
+      <section className="flex flex-row justify-between items-center gap-2 print:hidden">
+        <div className="min-w-0">
+          <div className="flex items-center gap-1.5 text-[10px] font-bold tracking-widest text-brand-accent uppercase mb-1">
+            <span>Sales</span>
+            <ChevronRight size={10} className="shrink-0" />
+            <span className="text-slate-400 truncate">Ledger</span>
+          </div>
+          <h1 className="text-xl sm:text-2xl leading-none font-black tracking-tight text-slate-900 truncate">
+            Invoice Management
+          </h1>
+        </div>
+
+        <div className="flex gap-2 shrink-0">
+
+          <button
+            onClick={downloadCSV}
+            className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+          >
+            <Download size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Download CSV</span>
+          </button>
+
+
+          <button
+            onClick={handlePrint}
+            className="flex items-center gap-1.5 bg-[#fff7f9] hover:bg-slate-50 border border-slate-200 text-slate-700 rounded-xl px-2 sm:px-3 py-2 text-xs font-bold transition shadow-sm"
+          >
+            <FileText size={14} className="text-slate-400" />
+            <span className="hidden xs:inline">Print Report</span>
+          </button>
+
+          <button
+            onClick={() => {
+              setEditingId(null);
+              setCustomerId('');
+              setItems([{ productId: '', batchId: '', quantity: 0, unitPrice: 0 }]);
+              setPaidAmount(0);
+              setAdjustment(0);
+              if (accounts.length > 0) setAccountName(accounts[0].accountName);
+              setShowCreateForm(true);
+            }}
+            className="flex items-center gap-1.5 bg-gradient-to-r from-brand-accent to-blue-600 text-white px-4 py-2 rounded-xl text-xs font-bold shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5 transition-all"
+          >
+            <Plus size={14} />
+            New Invoice
+          </button>
+        </div>
+      </section>
+
+      {/* =====================================================
+          STAT CARDS
+      ===================================================== */}
+      <section className="grid grid-cols-2 lg:grid-cols-4 gap-3 print:hidden">
+        {/* Total Invoices */}
+        <div
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All invoices"
+        >
+          <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-blue-50 rounded-full transition-transform group-hover:scale-150" />
+          <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
+            <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-blue-100 text-blue-600">
+              <FileText size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
+            </div>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Invoices</p>
+          </div>
+          <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{filteredSales.length}</p>
+        </div>
+
+        {/* Total Sales */}
+        <div
+          onClick={() => setBalanceFilter('all')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to show All sales"
+        >
+          <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-emerald-50 rounded-full transition-transform group-hover:scale-150" />
+          <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
+            <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-emerald-100 text-emerald-600">
+              <CircleDollarSign size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
+            </div>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Sales</p>
+          </div>
+          <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalSalesVal)}</p>
+        </div>
+
+        {/* Collected */}
+        <div
+          onClick={() => setBalanceFilter(balanceFilter === 'paid' ? 'all' : 'paid')}
+          role="button"
+          tabIndex={0}
+          className="bg-[#fff7f9] rounded-2xl p-2.5 sm:p-4 shadow-sm border border-slate-100 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Paid invoices"
+        >
+          <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-indigo-50 rounded-full transition-transform group-hover:scale-150" />
+          <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
+            <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-indigo-100 text-indigo-600">
+              <WalletCards size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
+            </div>
+            <p className="text-[8px] sm:text-[9px] font-bold text-slate-500 uppercase tracking-widest leading-tight">Total<br />Collected</p>
+          </div>
+          <p className="text-base sm:text-2xl font-black text-slate-900 tracking-tight relative z-10">{money(totalCollectedVal)}</p>
+        </div>
+
+        {/* Outstanding */}
+        <div
+          onClick={() => setBalanceFilter(balanceFilter === 'due' ? 'all' : 'due')}
+          role="button"
+          tabIndex={0}
+          className="bg-gradient-to-br from-rose-500 to-rose-600 rounded-2xl p-2.5 sm:p-4 shadow-sm border border-rose-400 flex flex-col hover:shadow-md hover:-translate-y-0.5 active:scale-95 transition-all cursor-pointer relative overflow-hidden group"
+          title="Click to filter Pending/Due invoices"
+        >
+          <div className="absolute -right-4 -top-4 w-10 h-10 sm:w-14 sm:h-14 bg-white/10 rounded-full transition-transform group-hover:scale-150" />
+          <div className="flex items-center gap-2 mb-1.5 sm:mb-2 relative z-10">
+            <div className="flex h-6 w-6 sm:h-8 sm:w-8 shrink-0 items-center justify-center rounded-lg sm:rounded-xl bg-white/20 text-white">
+              <TrendingUp size={14} className="sm:w-4 sm:h-4 w-3.5 h-3.5" />
+            </div>
+            <p className="text-[8px] sm:text-[9px] font-bold text-white/80 uppercase tracking-widest leading-tight">Outstanding<br />Due</p>
+          </div>
+          <p className="text-base sm:text-2xl font-black text-white tracking-tight relative z-10">{money(totalDueVal)}</p>
+        </div>
+      </section>
+
+      {/* =====================================================
+          FILTER BAR
+      ===================================================== */}
+      <section className="bg-[#fff7f9] rounded-2xl p-2.5 shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-2 print:hidden items-stretch lg:items-center justify-between">
+        {/* Search */}
+        <div className="relative flex-1 min-w-0">
+          <Search size={14} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+          <input
+            type="text"
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            placeholder="Search invoices, customers..."
+            className="h-10 sm:h-9 w-full rounded-xl bg-slate-50 border border-slate-100 pl-9 pr-3 text-xs text-slate-800 font-medium placeholder-slate-400 focus:outline-none focus:border-brand-accent focus:ring-1 focus:ring-brand-accent/30 transition-all"
+          />
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-2 w-full lg:w-auto">
+          <div className="grid grid-cols-2 sm:flex gap-2">
+            {/* Period Preset Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={datePreset}
+                onChange={e => {
+                  const val = e.target.value;
+                  setDatePreset(val);
+                  if (val !== 'custom') {
+                    const range = getPresetDateRange(val);
+                    setFromDate(range.fromDate);
+                    setToDate(range.toDate);
+                  }
+                }}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-bold text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[120px] cursor-pointer"
+              >
+                <option value="thisMonth">This Month</option>
+                <option value="today">Today</option>
+                <option value="lastMonth">Last Month</option>
+                <option value="quarter">This Quarter</option>
+                <option value="year">This Year</option>
+                <option value="all">All Time</option>
+                <option value="custom">Custom Range</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+
+            {/* Status Dropdown */}
+            <div className="relative w-full sm:w-auto">
+              <select
+                value={balanceFilter}
+                onChange={e => setBalanceFilter(e.target.value)}
+                className="h-10 sm:h-9 appearance-none w-full rounded-xl bg-slate-50 border border-slate-100 pl-3 pr-8 text-xs font-medium text-slate-700 focus:outline-none focus:border-brand-accent transition-all min-w-[110px] cursor-pointer"
+              >
+                <option value="all">All Statuses</option>
+                <option value="paid">Paid Only</option>
+                <option value="due">Outstanding Due</option>
+              </select>
+              <ChevronDown size={13} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+            </div>
+          </div>
+
+          {/* Date Picker Range Inputs */}
+          <div className="flex items-center justify-between sm:justify-start gap-1.5 rounded-xl bg-slate-50 border border-slate-100 px-3 h-10 sm:h-9 w-full sm:w-auto">
+            <CalendarDays size={13} className="text-slate-400 hidden sm:block shrink-0" />
+            <DateInput
+              value={fromDate}
+              onChange={e => {
+                setFromDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
+            <span className="text-slate-300 text-[10px] shrink-0">-</span>
+            <DateInput
+              value={toDate}
+              onChange={e => {
+                setToDate(e.target.value);
+                setDatePreset('custom');
+              }}
+              className="flex-1 min-w-[90px] sm:w-[105px] sm:flex-none"
+            />
+          </div>
+        </div>
+      </section>
+
+      {/* =====================================================
+          DESKTOP TABLE
+      ===================================================== */}
+      <section className="hidden lg:block overflow-hidden rounded-2xl bg-[#fff7f9] shadow-sm border border-slate-100">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-slate-800 font-medium">
+            <thead className="bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 text-white uppercase text-[9px] font-bold tracking-widest border-b border-slate-800">
+              <tr>
+                <th className="px-3 py-3 text-slate-200 w-[10%] whitespace-nowrap">Invoice</th>
+                <th className="px-3 py-3 text-slate-200 w-[20%] whitespace-nowrap">Customer</th>
+                <th className="px-3 py-3 text-slate-200 w-[21%] whitespace-nowrap">Items</th>
+                <th className="px-3 py-3 text-right text-slate-200 w-[12%] whitespace-nowrap">Total</th>
+                <th className="px-3 py-3 text-right text-slate-200 w-[12%] whitespace-nowrap">Paid</th>
+                <th className="px-3 py-3 text-right text-slate-200 w-[13%] whitespace-nowrap">Balance</th>
+                <th className="px-3 py-3 text-center text-slate-200 w-[12%] whitespace-nowrap">Status</th>
+                <th className="px-3 py-3 text-right text-slate-200 w-[8%] print:hidden whitespace-nowrap">Actions</th>
+              </tr>
+            </thead>
+
+            <tbody className="divide-y divide-slate-100">
+              {filteredSales.map((s) => (
+                <tr key={s.saleId} className="hover:bg-slate-50/80 transition-colors group">
+                  <td className="px-3 py-2 whitespace-nowrap">
+                    <span className="font-mono text-[11px] text-slate-500 group-hover:text-brand-accent transition-colors block">INV-{s.saleId}</span>
+                    <span className="text-[10px] text-slate-400 font-medium block">{formatDateDDMMYYYY(s.saleDate)}</span>
+                  </td>
+                  <td className="px-3 py-2 font-bold text-slate-900 truncate">{s.customerName}</td>
+                  <td className="px-3 py-2">
+                    <div className="flex flex-wrap gap-1">
+                      {s.details?.map((d, i) => {
+                        const sizeStr = getProductSizeStr(d.productId);
+                        return (
+                          <span key={i} className="rounded-md bg-[#fff7f9] border border-slate-200 px-1 py-0.5 text-[9px] font-bold text-slate-600 shadow-sm whitespace-nowrap">
+                            {sizeStr ? sizeStr.replace(/[^0-9]/g, '') : '?'}" × {d.quantity}
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </td>
+                  <td className="px-3 py-2 text-right font-black text-slate-900 whitespace-nowrap">{money(s.totalAmount)}</td>
+                  <td className="px-3 py-2 text-right text-slate-600 font-bold whitespace-nowrap">
+                    <div>{money(s.paidAmount)}</div>
+                    {s.paidAmount > 0 && s.accountName && (
+                      <span className="text-[9px] font-bold text-blue-600 block leading-tight">({s.accountName})</span>
+                    )}
+                  </td>
+                  <td className={`px-3 py-2 text-right font-black whitespace-nowrap ${s.balanceAmount > 0 ? "text-rose-500" : "text-emerald-500"}`}>
+                    {money(s.balanceAmount)}
+                  </td>
+                  <td className="px-3 py-2 text-center whitespace-nowrap">
+                    <span className={`inline-flex items-center justify-center rounded-full px-2 py-0.5 text-[9px] font-black uppercase tracking-wider ${s.balanceAmount <= 0
+                        ? "bg-emerald-50 text-emerald-600 border border-emerald-200/60"
+                        : s.paidAmount > 0
+                          ? "bg-amber-50 text-amber-600 border border-amber-200/60"
+                          : "bg-rose-50 text-rose-600 border border-rose-200/60"
+                      }`}>
+                      {s.balanceAmount <= 0 ? "Paid" : s.paidAmount > 0 ? "Partial" : "Due"}
+                    </span>
+                  </td>
+                  <td className="px-5 py-2 print:hidden">
+                    <div className="flex justify-end items-center gap-1">
+                      <button
+                        onClick={() => setSelectedSale(s)}
+                        className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-brand-accent transition-all hover:shadow-sm"
+                        title="View details"
+                      >
+                        <Eye size={12} />
+                      </button>
+                      <button
+                        onClick={() => handleEdit(s)}
+                        className="p-1.5 rounded-lg hover:bg-[#fff7f9] border border-transparent hover:border-slate-200 text-slate-400 hover:text-blue-500 transition-all hover:shadow-sm"
+                        title="Edit details"
+                      >
+                        <Pencil size={12} />
+                      </button>
+                      <button
+                        onClick={() => openPaymentModal(s)}
+                        className="p-1.5 rounded-lg hover:bg-emerald-50 border border-transparent hover:border-emerald-100 text-slate-400 hover:text-emerald-500 transition-all hover:shadow-sm"
+                        title="Payment History"
+                      >
+                        <CircleDollarSign size={12} />
+                      </button>
+                      {s.balanceAmount > 0 && (
+                        <button
+                          onClick={() => handleCollectPayment(s)}
+                          className="p-1.5 rounded-lg hover:bg-emerald-100 bg-emerald-50 border border-emerald-200 text-emerald-600 transition-all hover:shadow-sm"
+                          title="Collect Payment"
+                        >
+                          <WalletCards size={12} />
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleDelete(s.saleId)}
+                        className="p-1.5 rounded-lg hover:bg-rose-50 border border-transparent hover:border-rose-100 text-slate-400 hover:text-rose-500 transition-all hover:shadow-sm"
+                        title="Delete invoice"
+                      >
+                        <Trash2 size={12} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+            {filteredSales.length > 0 && (
+              <tfoot className="bg-slate-100 font-bold border-t border-slate-300">
+                <tr className="bg-slate-100/90 hover:bg-slate-100">
+                  <td colSpan={3} className="px-5 py-2.5 font-black text-slate-900 text-xs uppercase tracking-wider">
+                    Total ({filteredSales.length} Invoices)
+                  </td>
+                  <td className="px-5 py-2.5 text-right font-black text-slate-900 text-xs">
+                    {money(totalSalesVal)}
+                  </td>
+                  <td className="px-5 py-2.5 text-right font-bold text-slate-700 text-xs">
+                    {money(filteredSales.reduce((s, x) => s + (Number(x.paidAmount) || 0), 0))}
+                  </td>
+                  <td className={`px-5 py-2.5 text-right font-black text-xs ${totalDueVal > 0 ? "text-rose-600" : "text-emerald-700"}`}>
+                    {money(totalDueVal)}
+                  </td>
+                  <td className="px-5 py-2.5 text-center font-bold text-slate-600 text-xs">
+                    -
+                  </td>
+                  <td className="px-5 py-2.5 print:hidden"></td>
+                </tr>
+              </tfoot>
+            )}
+          </table>
+        </div>
+      </section>
+
+      {/* =====================================================
+          MOBILE INVOICE CARDS
+      ===================================================== */}
+      <section className="space-y-4 lg:hidden pb-10">
+        <div className="flex items-center justify-between px-1">
+          <div>
+            <h3 className="font-extrabold text-sm text-slate-900">Recent Invoices</h3>
+            <p className="text-[10px] text-slate-500 font-medium">Showing {filteredSales.length} records</p>
+          </div>
+        </div>
+
+        {filteredSales.map((invoice) => (
+          <article key={invoice.saleId} className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden flex flex-col h-full">
+            {/* Header */}
+            <div className="relative bg-gradient-to-r from-slate-900 via-slate-800 to-blue-950 px-4 py-3.5 text-white flex items-center justify-between overflow-hidden">
+              <div className="absolute -right-6 -top-6 w-20 h-20 bg-blue-500/20 rounded-full blur-xl pointer-events-none" />
+              <div className="flex flex-col justify-center relative z-10">
+                <p className="font-bold text-sm text-white leading-tight mb-1">{invoice.customerName}</p>
+                <div className="flex items-center gap-2">
+                  <span className="font-mono text-[10px] font-bold text-slate-300 bg-white/10 px-1.5 py-0.5 rounded backdrop-blur-md">INV-{invoice.saleId}</span>
+                  <span className="text-[10px] text-slate-300 font-medium">{formatDateDDMMYYYY(invoice.saleDate)}</span>
+                </div>
+              </div>
+              <div className="shrink-0 flex items-center gap-2 relative z-10">
+                <span className={`inline-flex items-center justify-center rounded-full px-3 py-1 text-[9px] font-black uppercase tracking-wider ${invoice.balanceAmount <= 0
+                    ? "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    : invoice.paidAmount > 0
+                      ? "bg-amber-500/20 text-amber-400 border border-amber-500/30"
+                      : "bg-rose-500/20 text-rose-400 border border-rose-500/30"
+                  }`}>
+                  {invoice.balanceAmount <= 0 ? "Paid" : invoice.paidAmount > 0 ? "Partial" : "Due"}
+                </span>
+              </div>
+            </div>
+
+            {/* Financial Summary */}
+            <div className="grid grid-cols-3 px-4 py-3">
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Total</p>
+                <p className="text-sm font-black text-slate-900">{money(invoice.totalAmount)}</p>
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Paid</p>
+                <p className="text-sm font-black text-slate-700">{money(invoice.paidAmount)}</p>
+                {invoice.paidAmount > 0 && invoice.accountName && (
+                  <span className="text-[9px] font-bold text-blue-600 block truncate leading-tight">({invoice.accountName})</span>
+                )}
+              </div>
+              <div>
+                <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Balance</p>
+                <p className={`text-sm font-black ${invoice.balanceAmount > 0 ? "text-rose-600" : "text-emerald-600"}`}>{money(invoice.balanceAmount)}</p>
+              </div>
+            </div>
+
+            {/* Items Summary */}
+            <div className="px-4 pb-3">
+              <div className="bg-slate-50/70 rounded-xl p-3 border border-slate-100/50">
+                <div className="flex items-center justify-between mb-3">
+                  <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Order Items</p>
+                  <p className="text-[10px] font-bold text-slate-500">
+                    {invoice.details?.reduce((sum, d) => sum + d.quantity, 0) || 0} Total Qty
+                  </p>
+                </div>
+                <div className="space-y-2.5">
+                  {invoice.details?.map((d, idx) => {
+                    const sizeStr = getProductSizeStr(d.productId);
+                    return (
+                      <div key={idx} className="flex items-center justify-between text-xs">
+                        <span className="font-bold text-slate-700">{sizeStr ? sizeStr.replace(/[^0-9]/g, '') : '?'}" Areca Plate</span>
+                        <div className="flex items-center gap-3">
+                          <span className="text-slate-400 font-medium">{d.quantity} pcs</span>
+                          <span className="font-black text-slate-900">{money(d.quantity * d.unitPrice)}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="mt-auto grid grid-cols-5 border-t border-slate-100">
+
+                <button
+                  onClick={() => setSelectedSale(invoice)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
+                >
+                  <Eye size={15} />
+                  <span className="text-[9px] font-bold">View</span>
+                </button>
+
+                <button
+                  onClick={() => handleEdit(invoice)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-blue-600 hover:bg-blue-50/50 transition-colors"
+                >
+                  <Pencil size={15} />
+                  <span className="text-[9px] font-bold">Edit</span>
+                </button>
+
+                <button
+                  onClick={() => openPaymentModal(invoice)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-emerald-600 hover:bg-emerald-50/50 transition-colors"
+                >
+                  <CircleDollarSign size={15} />
+                  <span className="text-[9px] font-bold">Payments</span>
+                </button>
+
+                <button
+                  onClick={() => handleDelete(invoice.saleId)}
+                  className="flex flex-col items-center justify-center gap-1 py-3 text-slate-500 hover:text-rose-600 hover:bg-rose-50/50 transition-colors"
+                >
+                  <Trash2 size={15} />
+                  <span className="text-[9px] font-bold">Delete</span>
+                </button>
+
+                {invoice.balanceAmount > 0 ? (
+                  <button
+                    onClick={() => handleCollectPayment(invoice)}
+                    className="flex flex-col items-center justify-center gap-1 py-3 bg-brand-accent/10 text-brand-accent hover:bg-brand-accent hover:text-white transition-colors"
+                  >
+                    <WalletCards size={15} />
+                    <span className="text-[9px] font-bold">Collect</span>
+                  </button>
+                ) : (
+                  <div className="flex flex-col items-center justify-center gap-1 py-3 text-emerald-600 bg-emerald-50/50">
+                    <CheckCircle size={15} />
+                    <span className="text-[9px] font-bold">Settled</span>
+                  </div>
+                )}
+              </div>
+            </article>
+        ))}
+      </section>
+
+      {/* =====================================================
+          RECORD SALE FORM OVERLAY MODAL (Sliding Drawer Layout)
+      ===================================================== */}
+      {showCreateForm && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-md max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto">
+
+            <div className="flex justify-between items-center border-b border-pink-200/40 pb-3 mb-3">
+              <h3 className="text-lg font-black text-slate-900 tracking-tight">
+                {editingId ? `Edit Invoice INV-${editingId}` : 'Create Sale Invoice'}
+              </h3>
+              <button
+                onClick={() => setShowCreateForm(false)}
+                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <form onSubmit={handleSubmit} className="space-y-4">
+              <div>
+                <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Customer</label>
+                <SearchableCustomerSelect
+                  customers={customers}
+                  value={customerId}
+                  onChange={(cId) => setCustomerId(cId)}
+                  onCustomerCreated={(newCust) => {
+                    setCustomers(prev => sortLatestFirst([newCust, ...prev], ['customerId', 'id'], 'customer'));
+                  }}
+                  placeholder="Search or type customer name to add..."
+                  required
+                />
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <div className="flex justify-between items-center border-b border-slate-100 pb-2">
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Items</label>
+                  <button type="button" onClick={addItemRow} className="text-[10px] flex items-center gap-1 text-brand-accent hover:text-blue-600 font-bold px-2 py-1 bg-blue-50 rounded-lg transition-colors">
+                    <Plus size={12} /> Add Item
+                  </button>
+                </div>
+
+                <div className="space-y-3">
+                  {items.map((item, idx) => (
+                    <div key={idx} className="bg-[#fff7f9] border border-slate-200 p-3.5 rounded-xl space-y-3 relative shadow-sm">
+                      {items.length > 1 && (
+                        <button type="button" onClick={() => removeItemRow(idx)} className="absolute top-2 right-2 p-1.5 text-slate-300 hover:text-rose-500 hover:bg-rose-50 rounded-lg transition-all">
+                          <Trash2 size={14} />
+                        </button>
+                      )}
+                      <div>
+                        <select
+                          value={item.productId}
+                          onChange={(e) => updateItem(idx, 'productId', e.target.value)}
+                          className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                          required
+                        >
+                          <option value="">Select Product</option>
+                          {products.map(p => <option key={p.productId} value={p.productId}>{p.productName} ({p.variantName})</option>)}
+                        </select>
+                      </div>
+                      {item.productId && (
+                        <div>
+                          <select
+                            value={item.batchId}
+                            onChange={(e) => updateItem(idx, 'batchId', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-xs text-slate-700 font-medium transition-all"
+                            required
+                          >
+                            <option value="">Select Batch (Supplier)</option>
+                            {batches
+                              .filter(b => b.productId === parseInt(item.productId) && (b.currentQuantity > 0 || b.batchId === parseInt(item.batchId)))
+                              .map(b => (
+                                <option key={b.batchId} value={b.batchId}>
+                                  {b.batchNumber} - {b.supplierName} (Qty: {b.currentQuantity})
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Quantity (Pcs)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={item.quantity}
+                            onChange={(e) => updateItem(idx, 'quantity', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                            placeholder="Qty (e.g. 1000)"
+                            required
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider mb-1">Plate Price (₹)</label>
+                          <input
+                            type="number"
+                            step="any"
+                            value={item.unitPrice}
+                            onChange={(e) => updateItem(idx, 'unitPrice', e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-3 py-2 text-sm text-slate-900 font-bold transition-all"
+                            placeholder="Price (e.g. 5.50)"
+                            required
+                          />
+                        </div>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="border-t border-slate-100 pt-4 space-y-4">
+                <div className="flex justify-between items-center text-xs font-bold text-slate-500">
+                  <span className="uppercase tracking-widest">Total Price:</span>
+                  <span className="text-slate-900">₹{totalCost?.toLocaleString()}</span>
+                </div>
+
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Adjustment / Round Off (₹)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={adjustment}
+                    onChange={(e) => setAdjustment(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                    placeholder="e.g. -50"
+                  />
+                </div>
+
+                <div className="flex justify-between items-center text-xs font-bold text-slate-500 pt-2 border-t border-slate-100">
+                  <span className="uppercase tracking-widest">Adjusted Total:</span>
+                  <span className="text-slate-900 font-black text-base">₹{parseFloat(finalTotal.toFixed(2))?.toLocaleString()}</span>
+                </div>
+
+                <div className="flex justify-between items-center text-xs font-bold text-rose-500">
+                  <span className="uppercase tracking-widest">Balance :</span>
+                  <span className="font-black text-base">₹{parseFloat(balanceDue.toFixed(2))?.toLocaleString()}</span>
+                </div>
+
+                {!editingId && (
+                  <>
+                    <div>
+                      <div className="flex justify-between items-center mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest">Collected Amount (₹)</label>
+                        <button
+                          type="button"
+                          onClick={() => setPaidAmount(parseFloat(finalTotal.toFixed(2)))}
+                          className="text-[10px] font-bold text-brand-accent hover:text-blue-600 transition-colors"
+                        >
+                          [ Full Pay ]
+                        </button>
+                      </div>
+                      <input
+                        type="number"
+                        value={paidAmount}
+                        onChange={(e) => setPaidAmount(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                        required
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1.5">Deposit Account</label>
+                      <select
+                        value={accountName}
+                        onChange={(e) => setAccountName(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-brand-accent focus:ring-2 focus:ring-brand-accent/20 rounded-xl px-4 py-2.5 text-sm text-slate-900 font-bold transition-all"
+                        required
+                      >
+                        {accounts.map(a => <option key={a.accountId} value={a.accountName}>{a.accountName}</option>)}
+                      </select>
+                    </div>
+                  </>
+                )}
+                {editingId && (
+                  <div className="bg-blue-50 p-3 rounded-xl border border-blue-100 flex items-center gap-2">
+                    <WalletCards size={16} className="text-blue-600" />
+                    <p className="text-xs font-bold text-blue-700">Payments are managed in the Payment History modal.</p>
+                  </div>
+                )}
+              </div>
+
+              <div className="flex gap-3 pt-3.5 border-t border-pink-200/40">
+                <button
+                  type="button"
+                  onClick={() => setShowCreateForm(false)}
+                  className="w-1/2 bg-[#fff7f9] text-slate-700 hover:text-slate-900 rounded-xl py-3 text-xs font-bold transition-all border border-slate-200 hover:bg-slate-50 shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  className="w-1/2 bg-gradient-to-r from-brand-accent to-blue-600 text-white hover:from-blue-600 hover:to-blue-700 rounded-xl py-3 text-xs font-bold transition-all flex items-center justify-center gap-2 shadow-lg shadow-brand-accent/20 hover:shadow-brand-accent/40 hover:-translate-y-0.5"
+                >
+                  {editingId ? <><Edit2 size={14} /> Update</> : <><CheckCircle size={14} /> Post Sale</>}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          VIEW INVOICE VOUCHER MODAL
+      ========================================================= */}
+      {selectedSale && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-[#ffeef1] border border-pink-200/80 w-full max-w-xl max-h-[90vh] rounded-2xl p-5 shadow-2xl flex flex-col overflow-y-auto space-y-4">
+            <div className="flex items-center justify-between border-b border-pink-200/40 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="h-8 w-8 rounded-xl bg-blue-100 text-blue-700 flex items-center justify-center font-black">
+                  <FileText size={16} />
+                </div>
+                <div>
+                  <h3 className="text-sm font-black text-slate-900">Sales Invoice Voucher</h3>
+                  <span className="text-[10px] font-mono text-slate-500">INV-{selectedSale.saleId}</span>
+                </div>
+              </div>
+              <button
+                onClick={() => setSelectedSale(null)}
+                className="text-slate-400 hover:text-slate-800 transition-colors p-2 hover:bg-slate-50 rounded-full"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="bg-[#fff7f9] p-3.5 rounded-xl border border-slate-200 text-xs space-y-2">
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Customer:</span>
+                <span className="font-black text-slate-900">{selectedSale.customerName}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Invoice Date:</span>
+                <span className="font-mono text-slate-800">{formatDateDDMMYYYY(selectedSale.saleDate)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-slate-500 font-bold">Payment Status:</span>
+                <span className={`font-black uppercase tracking-wider text-[10px] px-2 py-0.5 rounded-md ${selectedSale.paymentStatus === 'PAID'
+                    ? 'bg-emerald-100 text-emerald-700'
+                    : selectedSale.paidAmount > 0
+                      ? 'bg-amber-100 text-amber-700'
+                      : 'bg-rose-100 text-rose-700'
+                  }`}>
+                  {selectedSale.paymentStatus}
+                </span>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <div className="border border-slate-200 rounded-xl overflow-hidden bg-white">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead className="bg-slate-900 text-white">
+                  <tr>
+                    <th className="p-2 text-[10px] uppercase font-bold">Product & Batch</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Qty</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Price</th>
+                    <th className="p-2 text-[10px] uppercase font-bold text-right">Subtotal</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100">
+                  {selectedSale.details?.map((d, i) => {
+                    const prod = products.find(p => p.productId === d.productId);
+                    const batch = batches.find(b => b.batchId === d.batchId);
+                    return (
+                      <tr key={i}>
+                        <td className="p-2">
+                          <p className="font-bold text-slate-800">{prod ? `${prod.productName} (${prod.variantName})` : `Product #${d.productId}`}</p>
+                          {batch && (
+                            <p className="text-[9px] font-mono text-slate-400">
+                              Batch: {batch.batchNumber} ({batch.supplierName})
+                            </p>
+                          )}
+                        </td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{d.quantity}</td>
+                        <td className="p-2 text-right font-mono font-bold text-slate-700">{money(d.unitPrice)}</td>
+                        <td className="p-2 text-right font-mono font-black text-slate-900">{money(d.quantity * d.unitPrice)}</td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+                <tfoot className="bg-slate-100 font-black text-xs divide-y divide-slate-200">
+                  <tr>
+                    <td colSpan={3} className="p-2 uppercase text-[10px] text-slate-600">Total Invoice Amount</td>
+                    <td className="p-2 text-right font-mono text-slate-900">{money(selectedSale.totalAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="p-2 uppercase text-[10px] text-slate-600">Paid Amount</td>
+                    <td className="p-2 text-right font-mono text-emerald-700">{money(selectedSale.paidAmount)}</td>
+                  </tr>
+                  <tr>
+                    <td colSpan={3} className="p-2 uppercase text-[10px] text-slate-600">Balance Due</td>
+                    <td className={`p-2 text-right font-mono ${selectedSale.balanceAmount > 0 ? "text-rose-600" : "text-slate-900"}`}>
+                      {money(selectedSale.balanceAmount)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => setSelectedSale(null)}
+                className="px-6 py-2 bg-[#fff7f9] text-slate-700 hover:bg-slate-100 hover:text-slate-900 rounded-xl font-bold text-xs border border-slate-200 transition-colors shadow-sm"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* =========================================================
+          PAYMENT HISTORY MODAL (Matching Emerald Collect Theme)
+      ========================================================= */}
+      {showPaymentModal && paymentSale && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-[95%] sm:w-full max-w-md sm:max-w-lg max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/20 shadow-inner">
+                  <WalletCards size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white leading-tight">Payment History</h3>
+                  <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider truncate max-w-[200px] sm:max-w-xs">
+                    {paymentSale.customerName} • INV-{paymentSale.saleId}
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setShowPaymentModal(false)} className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors">
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="p-4 sm:p-5 overflow-y-auto flex-1 bg-slate-50/50 space-y-4">
+              {/* Financial Stats Summary Card */}
+              <div className="bg-white rounded-xl border border-slate-200/80 p-3 shadow-sm text-xs space-y-1.5">
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Customer:</span>
+                  <span className="text-slate-800 font-black truncate max-w-[180px]">{paymentSale.customerName}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Total Bill:</span>
+                  <span className="text-slate-800 font-black">{money(paymentSale.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Already Paid:</span>
+                  <span className="text-emerald-600 font-black">{money(paymentSale.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 text-rose-600 font-extrabold">
+                  <span>Remaining Balance:</span>
+                  <span className="font-black text-sm">{money(paymentSale.balanceAmount)}</span>
+                </div>
+              </div>
+
+              {/* Add Payment Form */}
+              {paymentSale.balanceAmount > 0 && (
+                <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm space-y-3">
+                  <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                    <Plus size={14} className="text-emerald-600" /> Record New Payment
+                  </h4>
+                  <form onSubmit={handleAddPayment} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                      <div>
+                        <div className="flex justify-between items-center mb-1">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                            Amount (₹)
+                          </label>
+                          {parseFloat(newPayment.amount) !== paymentSale.balanceAmount && (
+                            <button
+                              type="button"
+                              onClick={() => setNewPayment({ ...newPayment, amount: String(paymentSale.balanceAmount) })}
+                              className="text-[9px] font-black text-emerald-600 hover:underline"
+                            >
+                              Full (₹{paymentSale.balanceAmount})
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="number" step="any" required
+                          value={newPayment.amount} onChange={e => setNewPayment({ ...newPayment, amount: e.target.value })}
+                          className="w-full bg-white border-2 border-emerald-500/70 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-sm font-black text-emerald-800 placeholder:text-slate-400"
+                          placeholder={`Max: ${paymentSale.balanceAmount}`}
+                        />
+                      </div>
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                          Deposit Account
+                        </label>
+                        <select
+                          required value={newPayment.accountId} onChange={e => setNewPayment({ ...newPayment, accountId: e.target.value })}
+                          className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-800"
+                        >
+                          <option value="">Select Account</option>
+                          {accounts.map(a => <option key={a.accountId} value={a.accountId}>{a.accountName}</option>)}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Payment Method - Segmented Pill Buttons */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                        Payment Method
+                      </label>
+                      <div className="grid grid-cols-3 sm:grid-cols-5 gap-1.5">
+                        {['CASH', 'GPAY', 'PHONEPE', 'BANK TRANSFER', 'CHEQUE'].map(method => (
+                          <button
+                            key={method}
+                            type="button"
+                            onClick={() => setNewPayment({ ...newPayment, paymentMethod: method })}
+                            className={`py-1.5 px-1 text-[10px] font-black rounded-lg border transition-all text-center truncate ${
+                              newPayment.paymentMethod === method
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
+                                : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                            }`}
+                          >
+                            {method}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                        Notes (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={newPayment.notes} onChange={e => setNewPayment({ ...newPayment, notes: e.target.value })}
+                        className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 placeholder:text-slate-400"
+                        placeholder="e.g. Paid by GPay"
+                      />
+                    </div>
+                    <div className="flex justify-end pt-1">
+                      <button type="submit" className="bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white px-5 py-2.5 rounded-xl text-xs font-black transition-all flex items-center gap-2 shadow-lg shadow-emerald-600/20">
+                        <CheckCircle size={14} /> Save Payment
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              )}
+
+              {/* Payments List */}
+              <div className="bg-white p-3.5 sm:p-4 rounded-xl border border-slate-200/80 shadow-sm">
+                <h4 className="text-xs font-black text-slate-900 mb-2.5 uppercase tracking-wider">
+                  Payment Records ({payments.length})
+                </h4>
+                {payments.length === 0 ? (
+                  <div className="text-center py-4 bg-slate-50 rounded-xl border border-slate-200 border-dashed">
+                    <p className="text-xs font-bold text-slate-400">No payments recorded yet.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-2">
+                    {payments.map(p => (
+                      <div key={p.paymentId} className="flex items-center justify-between p-3 rounded-xl border border-slate-100 bg-slate-50/50 hover:bg-slate-50 transition-colors group">
+                        <div className="flex flex-col">
+                          <span className="font-black text-emerald-700 text-sm">{money(p.amount)}</span>
+                          <div className="flex items-center flex-wrap gap-1.5 text-[10px] font-bold text-slate-500 mt-1">
+                            <span>{formatDateDDMMYYYY(p.createdAt)}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded font-black text-[9px] uppercase">{p.paymentMethod || 'CASH'}</span>
+                            <span className="text-slate-300">•</span>
+                            <span className="text-slate-700 bg-slate-200/70 px-1.5 py-0.5 rounded uppercase font-bold text-[9px]">{p.accountName}</span>
+                            {p.notes && <><span className="text-slate-300">•</span><span className="text-slate-500">{p.notes}</span></>}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeletePayment(p.paymentId);
+                          }}
+                          className="p-2 text-slate-400 hover:text-rose-600 hover:bg-rose-50 rounded-lg transition-colors"
+                          title="Delete Payment"
+                        >
+                          <Trash2 size={16} />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {/* =========================================================
+          QUICK COLLECT MODAL (100% Mobile Responsive)
+      ========================================================= */}
+      {showCollectModal && collectSale && (
+        <div className="fixed inset-0 bg-slate-900/70 backdrop-blur-sm flex items-center justify-center p-2.5 sm:p-4 z-50 animate-backdrop-in">
+          <div className="animate-modal-pop bg-white border border-slate-200 w-[95%] sm:w-full max-w-md sm:max-w-lg rounded-2xl shadow-2xl flex flex-col overflow-hidden max-h-[92vh]">
+            {/* Header */}
+            <div className="bg-gradient-to-r from-emerald-900 via-slate-900 to-emerald-950 px-4 py-3.5 sm:px-5 sm:py-4 text-white flex items-center justify-between shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-300 border border-emerald-400/20 shadow-inner">
+                  <WalletCards size={18} />
+                </div>
+                <div>
+                  <h3 className="text-sm sm:text-base font-black text-white leading-tight">Collect Payment</h3>
+                  <p className="text-[10px] font-bold text-emerald-300 uppercase tracking-wider truncate max-w-[200px]">
+                    {collectSale.customerName} • INV-{collectSale.saleId}
+                  </p>
+                </div>
+              </div>
+              <button 
+                onClick={() => setShowCollectModal(false)}
+                className="text-slate-400 hover:text-white p-1.5 rounded-full hover:bg-white/10 transition-colors"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            {/* Form */}
+            <form onSubmit={handleConfirmCollect} className="p-4 sm:p-5 overflow-y-auto flex-1 space-y-3.5 bg-slate-50/50">
+              {/* Financial Summary Card */}
+              <div className="bg-white rounded-xl border border-slate-200/80 p-3 shadow-sm text-xs space-y-1.5">
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Customer:</span>
+                  <span className="text-slate-800 font-black truncate max-w-[180px]">{collectSale.customerName}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Total Bill:</span>
+                  <span className="text-slate-800 font-black">{money(collectSale.totalAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-500 font-bold">
+                  <span>Already Paid:</span>
+                  <span className="text-emerald-600 font-black">{money(collectSale.paidAmount)}</span>
+                </div>
+                <div className="flex justify-between items-center pt-1.5 border-t border-slate-100 text-rose-600 font-extrabold">
+                  <span>Remaining Balance:</span>
+                  <span className="font-black text-sm">{money(collectSale.balanceAmount)}</span>
+                </div>
+              </div>
+
+              {/* Amount Input */}
+              <div>
+                <div className="flex justify-between items-center mb-1">
+                  <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">
+                    Amount to Collect (₹)
+                  </label>
+                  {parseFloat(collectForm.amount) !== collectSale.balanceAmount && (
+                    <button
+                      type="button"
+                      onClick={() => setCollectForm({ ...collectForm, amount: collectSale.balanceAmount })}
+                      className="text-[9px] font-black text-emerald-600 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 px-2 py-0.5 rounded-md transition-colors"
+                    >
+                      Reset to Full (₹{collectSale.balanceAmount})
+                    </button>
+                  )}
+                </div>
+                <input
+                  type="number"
+                  step="any"
+                  min="1"
+                  max={collectSale.balanceAmount}
+                  required
+                  value={collectForm.amount}
+                  onChange={e => setCollectForm({ ...collectForm, amount: e.target.value })}
+                  className="w-full bg-white border-2 border-emerald-500/70 focus:border-emerald-600 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3.5 py-2.5 text-base font-black text-emerald-800 placeholder:text-slate-400"
+                  placeholder="Enter amount"
+                />
+                <p className="text-[10px] text-slate-400 mt-1">
+                  Default is full balance <b>₹{collectSale.balanceAmount}</b>. Edit to collect partial.
+                </p>
+              </div>
+
+              {/* Deposit Into Account */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Deposit Into Account
+                </label>
+                <select
+                  required
+                  value={collectForm.accountId}
+                  onChange={e => setCollectForm({ ...collectForm, accountId: e.target.value })}
+                  className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2.5 text-xs font-bold text-slate-800"
+                >
+                  <option value="">Select Account</option>
+                  {accounts.map(a => (
+                    <option key={a.accountId} value={a.accountId}>
+                      {a.accountName}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Payment Method - Segmented Pill Buttons (No overflow!) */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1.5">
+                  Payment Method
+                </label>
+                <div className="grid grid-cols-3 gap-1.5">
+                  {['CASH', 'GPAY', 'PHONEPE', 'BANK TRANSFER', 'CHEQUE'].map(method => (
+                    <button
+                      key={method}
+                      type="button"
+                      onClick={() => setCollectForm({ ...collectForm, paymentMethod: method })}
+                      className={`py-2 px-1 text-[10px] font-black rounded-lg border transition-all text-center truncate ${
+                        collectForm.paymentMethod === method
+                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm ring-2 ring-emerald-500/20'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                      }`}
+                    >
+                      {method}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Notes */}
+              <div>
+                <label className="block text-[10px] font-bold text-slate-600 uppercase tracking-wider mb-1">
+                  Remarks / Notes (Optional)
+                </label>
+                <input
+                  type="text"
+                  value={collectForm.notes}
+                  onChange={e => setCollectForm({ ...collectForm, notes: e.target.value })}
+                  className="w-full bg-white border border-slate-200 focus:border-emerald-500 focus:ring-2 focus:ring-emerald-500/20 rounded-xl px-3 py-2 text-xs font-bold text-slate-700 placeholder:text-slate-400"
+                  placeholder="e.g. Full settlement"
+                />
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-2.5 pt-2">
+                <button
+                  type="button"
+                  onClick={() => setShowCollectModal(false)}
+                  className="w-1/3 bg-white text-slate-600 hover:text-slate-800 border border-slate-200 hover:bg-slate-50 rounded-xl py-2.5 text-xs font-bold transition-all shadow-sm"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="submit"
+                  disabled={isCollecting}
+                  className="w-2/3 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl py-2.5 text-xs font-black transition-all flex items-center justify-center gap-2 shadow-lg shadow-emerald-600/20 disabled:opacity-50"
+                >
+                  <CheckCircle size={14} />
+                  {isCollecting ? 'Collecting...' : `Collect ${money(collectForm.amount || 0)}`}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
