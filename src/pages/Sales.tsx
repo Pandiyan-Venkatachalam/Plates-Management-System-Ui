@@ -769,8 +769,10 @@ export default function Sales() {
                   <td className="px-3 py-2 text-right font-black text-slate-900 whitespace-nowrap">{money(s.totalAmount)}</td>
                   <td className="px-3 py-2 text-right text-slate-600 font-bold whitespace-nowrap">
                     <div>{money(s.paidAmount)}</div>
-                    {s.paidAmount > 0 && s.accountName && (
-                      <span className="text-[9px] font-bold text-blue-600 block leading-tight">({s.accountName})</span>
+                    {s.paidAmount > 0 && (s.paymentMethodAccountName || s.accountName) && (
+                      <span className="text-[9px] font-bold text-blue-600 block leading-tight break-words uppercase" title={s.paymentMethodAccountName || s.accountName}>
+                        ({s.paymentMethodAccountName || s.accountName})
+                      </span>
                     )}
                   </td>
                   <td className={`px-3 py-2 text-right font-black whitespace-nowrap ${s.balanceAmount > 0 ? "text-rose-500" : "text-emerald-500"}`}>
@@ -900,8 +902,10 @@ export default function Sales() {
               <div>
                 <p className="text-[10px] uppercase font-bold tracking-wider text-slate-400 mb-0.5">Paid</p>
                 <p className="text-sm font-black text-slate-700">{money(invoice.paidAmount)}</p>
-                {invoice.paidAmount > 0 && invoice.accountName && (
-                  <span className="text-[9px] font-bold text-blue-600 block truncate leading-tight">({invoice.accountName})</span>
+                {invoice.paidAmount > 0 && (invoice.paymentMethodAccountName || invoice.accountName) && (
+                  <span className="text-[9px] font-bold text-blue-600 block leading-tight break-words uppercase" title={invoice.paymentMethodAccountName || invoice.accountName}>
+                    ({invoice.paymentMethodAccountName || invoice.accountName})
+                  </span>
                 )}
               </div>
               <div>

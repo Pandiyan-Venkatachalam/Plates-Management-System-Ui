@@ -110,6 +110,9 @@ export interface Sale {
   status: string;
   details?: SaleDetail[];
   payments?: SalePayment[];
+  accountName?: string;
+  paymentMethodAccountName?: string;
+  accountId?: number;
   [key: string]: any;
 }
 
