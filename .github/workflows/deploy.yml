@@ -1,0 +1,73 @@
+name: Deploy Frontend UI to VPS & Build APK
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout Repository
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js 20
+      uses: actions/setup-node@v4
+      with:
+        node-version: 20
+        cache: 'npm'
+
+    - name: Install Dependencies
+      run: npm install
+
+    - name: Build Web Application
+      run: npm run build
+
+    - name: Deploy Web App to VPS
+      uses: appleboy/scp-action@v0.1.7
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT || 22 }}
+        source: "./dist/*"
+        target: "/var/www/html"
+        strip_components: 1
+        overwrite: true
+
+    - name: Reload Nginx Web Server on VPS
+      uses: appleboy/ssh-action@v1.0.3
+      with:
+        host: ${{ secrets.VPS_HOST }}
+        username: ${{ secrets.VPS_USERNAME }}
+        password: ${{ secrets.VPS_PASSWORD }}
+        key: ${{ secrets.VPS_SSH_KEY }}
+        port: ${{ secrets.VPS_PORT || 22 }}
+        script: |
+          sudo systemctl reload nginx
+          echo "Nginx reloaded successfully!"
+
+    - name: Setup Java 17 for Android APK Build
+      uses: actions/setup-java@v4
+      with:
+        distribution: 'temurin'
+        java-version: '17'
+
+    - name: Sync Capacitor Android
+      run: npx cap sync android
+
+    - name: Build Android Debug APK
+      run: |
+        cd android
+        chmod +x gradlew
+        ./gradlew assembleDebug
+
+    - name: Upload APK as Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: app-vinayaga
+        path: android/app/build/outputs/apk/debug/app-debug.apk
+        retention-days: 30
